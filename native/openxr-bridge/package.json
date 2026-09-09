@@ -1,0 +1,17 @@
+{
+  "name": "openxr-bridge",
+  "version": "0.1.0",
+  "description": "Native OpenXR bridge for Electron — Quest 3S via PC Link. Full pipeline: pose, hand tracking, D3D11 shared texture submission.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "node-gyp configure && node-gyp build",
+    "rebuild": "node-gyp clean && node-gyp configure && node-gyp build",
+    "clean": "node-gyp clean"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^8.0.0",
+    "node-gyp": "^10.0.0"
+  }
+}

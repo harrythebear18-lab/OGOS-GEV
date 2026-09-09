@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OSINT Sentinel Workstation</title>
+    <link rel="stylesheet" href="/cesium/Widgets/widgets.css" />
+    <style>
+      html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+      .cesium-viewer-bottom { display: none; }
+    </style>
+    <script>
+      // Must be set BEFORE Cesium JS loads — ES module imports are hoisted.
+      // In dev, Vite serves public/ at root. In production, relative to HTML.
+      window.CESIUM_BASE_URL = (location.protocol === 'file:' ? '..' : '') + '/cesium/';
+      // Disable Cesium Ion — we use our own imagery/terrain providers.
+      window.CESIUM_ION_DEFAULT_ACCESS_TOKEN = '';
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

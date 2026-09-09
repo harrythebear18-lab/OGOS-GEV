@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+native/openxr-bridge/node_modules/
+
+# Build output
+out/
+dist/
+native/openxr-bridge/build/
+
+# Cesium assets (copied by vite plugin)
+public/cesium/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache
+.vite/
+.cache/
+
+# Secrets
+*.pem
+*.key

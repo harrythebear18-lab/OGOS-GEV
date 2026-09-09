@@ -1,0 +1,106 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import { IPC } from '@shared/ipc'
+
+/**
+ * Typed preload API. Mirrors OGOS's window.terrain / window.ai / window.climate
+ * pattern but routed through our IPC contract.
+ */
+const api = {
+  /* ── Generic ── */
+  hello: () => ipcRenderer.invoke(IPC.APP_HELLO),
+  send: (channel: string, ...args: unknown[]) => ipcRenderer.send(channel, ...args),
+  invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  on: (channel: string, callback: (...args: unknown[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args)
+    ipcRenderer.on(channel, handler)
+  },
+  off: (channel: string) => {
+    ipcRenderer.removeAllListeners(channel)
+  },
+
+  /* ── Scene ── */
+  scene: {
+    get: () => ipcRenderer.invoke(IPC.GET_SCENE_CONTEXT),
+    set: (patch: unknown) => ipcRenderer.send(IPC.SET_SCENE_CONTEXT, patch),
+    onContext: (cb: (ctx: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, ctx: unknown) => cb(ctx)
+      ipcRenderer.on(IPC.SCENE_CONTEXT_CHANGED, handler)
+    },
+    setStack: (stack: string) => ipcRenderer.send(IPC.GLOBE_SET_STACK, stack),
+    sendViewport: (vp: unknown) => ipcRenderer.send(IPC.GLOBE_VIEWPORT, vp),
+  },
+
+  /* ── Tiles / offline ── */
+  tiles: {
+    get: (source: string, z: number, x: number, y: number) =>
+      ipcRenderer.invoke(IPC.TILE_REQUEST, { source, z, x, y }),
+    getStrategy: () => ipcRenderer.invoke(IPC.GET_OFFLINE_STRATEGY),
+    setStrategy: (s: string) => ipcRenderer.send(IPC.SET_OFFLINE_STRATEGY, s),
+  },
+
+  /* ── Terrain / SAR ── */
+  terrain: {
+    demSample: (lng: number, lat: number) => ipcRenderer.invoke(IPC.DEM_SAMPLE, { lng, lat }),
+    demProfile: (coords: unknown[]) => ipcRenderer.invoke(IPC.DEM_PROFILE, { coords }),
+    slopeAnalysis: (req: unknown) => ipcRenderer.invoke(IPC.SLOPE_ANALYSIS, req),
+    anomalyAnalysis: (req: unknown) => ipcRenderer.invoke(IPC.ANOMALY_ANALYSIS, req),
+    searchZones: (req: unknown) => ipcRenderer.invoke(IPC.SEARCH_ZONES, req),
+    restPoints: (req: unknown) => ipcRenderer.invoke(IPC.REST_POINTS, req),
+    routePlan: (req: unknown) => ipcRenderer.invoke(IPC.ROUTE_PLAN, req),
+    fallRisk: (req: unknown) => ipcRenderer.invoke(IPC.FALL_RISK, req),
+    runoff: (req: unknown) => ipcRenderer.invoke(IPC.RUNOFF_ANALYSIS, req),
+    canopy: (req: unknown) => ipcRenderer.invoke(IPC.CANOPY_ANALYSIS, req),
+    behavior: (req: unknown) => ipcRenderer.invoke(IPC.BEHAVIOR_ENGINE, req),
+    water: (bounds: unknown) => ipcRenderer.invoke(IPC.WATER_FETCH, { bounds }),
+  },
+
+  /* ── Imagery ── */
+  imagery: {
+    search: (req: unknown) => ipcRenderer.invoke(IPC.SENTINEL_SEARCH, req),
+    layers: () => ipcRenderer.invoke(IPC.SENTINEL_LAYERS),
+  },
+
+  /* ── Weather ── */
+  weather: {
+    radar: () => ipcRenderer.invoke(IPC.WEATHER_RADAR),
+    forecast: (point: { lng: number; lat: number }) => ipcRenderer.invoke(IPC.WEATHER_FORECAST, point),
+  },
+
+  /* ── Live data (pushed from main) ── */
+  live: {
+    onUpdate: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.LIVE_UPDATE, handler)
+    },
+    onAircraft: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.AIRCRAFT_UPDATE, handler)
+    },
+    onEarthquake: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.EARTHQUAKE_UPDATE, handler)
+    },
+    onFire: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.FIRE_UPDATE, handler)
+    },
+  },
+
+  /* ── AI ── */
+  ai: {
+    health: () => ipcRenderer.invoke(IPC.AI_HEALTH),
+    chat: (prompt: string, model?: string, context?: string) =>
+      ipcRenderer.invoke(IPC.AI_CHAT, { prompt, model, context }),
+    vision: (prompt: string, image: string, model?: string) =>
+      ipcRenderer.invoke(IPC.AI_VISION, { prompt, image, model }),
+    clipHealth: () => ipcRenderer.invoke(IPC.AI_CLIP_HEALTH),
+    clipSearch: (query: string, bounds?: unknown) =>
+      ipcRenderer.invoke(IPC.AI_CLIP_SEARCH, { query, bounds }),
+    webSearch: (query: string, limit?: number) =>
+      ipcRenderer.invoke(IPC.WEB_SEARCH, { query, limit }),
+  },
+}
+
+contextBridge.exposeInMainWorld('api', api)
+
+export type Api = typeof api

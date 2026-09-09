@@ -1,0 +1,78 @@
+{
+  "name": "osint-sentinel-workstation",
+  "version": "0.1.0",
+  "description": "Offline-first multispectral geospatial intelligence workstation — Sentinel-2 base, live satellite overlays, SAR/AI analysis.",
+  "main": "out/main/index.js",
+  "private": true,
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "copy:cesium": "node -e \"require('fs').cpSync('node_modules/cesium/Build/Cesium', 'public/cesium', { recursive: true, force: true })\"",
+    "dev": "npm run copy:cesium && node scripts/dev.js",
+    "build": "npm run copy:cesium && npx electron-vite build",
+    "preview": "node scripts/preview.js",
+    "dist:win": "npm run build && npx electron-builder --win",
+    "dist:mac": "npm run build && npx electron-builder --mac",
+    "dist:portable": "npm run build && npx electron-builder --win portable",
+    "dist:all": "npm run build && npx electron-builder --win --mac"
+  },
+  "build": {
+    "appId": "com.osint-sentinel-workstation.app",
+    "productName": "OSINT Sentinel Workstation",
+    "directories": {
+      "output": "E:/osint-builds/release"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "cesium": "^1.124.0",
+    "pngjs": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "satellite.js": "^6.0.2",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^32.1.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}
