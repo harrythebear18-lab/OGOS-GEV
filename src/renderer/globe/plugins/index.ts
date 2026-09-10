@@ -35,6 +35,7 @@ import { spaceWeatherPlugin } from './space-weather-plugin'
 import { gridAssetsPlugin } from './grid-assets-plugin'
 import { networkPlugin } from './network-plugin'
 import { predictionsPlugin } from './predictions-plugin'
+import { detectionPlugin } from './detection-plugin'
 
 // Register all plugins (doesn't activate them)
 pluginManager.register([
@@ -66,8 +67,10 @@ pluginManager.register([
   clipPlugin,
   visionPlugin,
   webSearchPlugin,
+  detectionPlugin,
   // Tier 4b — Predictions (ported from OGOS)
   predictionsPlugin,
+  detectionPlugin,
   // Tier 5 — Mission Logic
   searchZonesPlugin,
   restPointsPlugin,
@@ -102,6 +105,7 @@ export {
   gridAssetsPlugin,
   networkPlugin,
   predictionsPlugin,
+  detectionPlugin,
   clipPlugin,
   visionPlugin,
   webSearchPlugin,

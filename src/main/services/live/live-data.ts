@@ -38,9 +38,9 @@ class LiveDataManager {
     setTimeout(() => { console.log('[live-data] polling satellites'); this.pollSatellites() }, 3000)
     this.timers.push(setInterval(() => this.pollSatellites(), 10_000))
 
-    // Aircraft — every 15s, first poll in 5s
+    // Aircraft — every 60s (OpenSky anonymous rate limit), first poll in 5s
     setTimeout(() => { console.log('[live-data] polling aircraft'); this.pollAircraft() }, 5000)
-    this.timers.push(setInterval(() => this.pollAircraft(), 15_000))
+    this.timers.push(setInterval(() => this.pollAircraft(), 60_000))
 
     // Fires — every 5 min, first poll in 8s
     setTimeout(() => { console.log('[live-data] polling fires'); this.pollFires() }, 8000)

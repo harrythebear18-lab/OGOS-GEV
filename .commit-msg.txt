@@ -1,24 +1,27 @@
-OGOS capability migration — hiker/trip, climate helpers, UI controls
+Fix hydrology/rainfall reliability + update README for single-window 3D cockpit
 
-Migrated from OSINT-Global-OS reference (not wrapped, rebuilt natively):
-- Hiker profile calibration (perception, anchors, disorientation, search cone)
-- Trip params physiology (heatstroke, dehydration, survival window)
-- Bathymetry cache (NOAA ERDDAP ETOPO180)
-- Region classification (ocean basins + continents)
-- Anomaly detection plugin (depressions + prominences)
-- Water features plugin (OSM rivers, lakes, springs)
-- Case profiles (M Cave / Kenny Veach)
-- GeoJSON/KML/KMZ export + import
-- Road network (OSM Overpass) + road-aware A* routing
-- Remains corridor (fall → flow → find)
-- Watershed divides in hydrology
+Hydrology fixes:
+- Rainfall timeout increased from 5s to 15s (Open-Meteo was timing out)
+- Added rainfall method to preload weather bridge + globals.d.ts type
+- Added manual rainfall slider + override toggle to hydrology plugin
+- Fixed no-retry-on-error (lastBbox now cleared on failure)
+- Removed water fetch duplication from hydrology (dedicated water plugin handles it)
+- Added per-entity count displays (flow paths, pools, flood zones, watersheds)
+- Added isRunning guard to prevent concurrent analysis runs
 
-UI/controls added to all 31 plugins:
-- LKP pin now always visible (disableDepthTestDistance)
-- Weather forecast display (temp, wind, humidity, 24h summary)
-- Storm prediction details (wind, pressure, per-storm)
-- Visibility toggles + count displays on all live feed plugins
-- Routes plugin auto-fills start from LKP pin
+Water/roads Overpass reliability:
+- Added 2 more Overpass mirror servers (mail.ru, kumi.by)
+- Added non-JSON response detection (some mirrors return HTML errors)
+- Increased timeout from 15s to 25s
+- Added error field to WaterResponse so plugin can surface failures
+- Water plugin now shows error message in controls when all servers fail
+
+README rewrite:
+- Reflects single-window 3D Cesium cockpit (not multi-window, not 2D)
+- Documents all 31 plugins grouped by tier
+- Updated project structure (no map/2D, no gpu window, no ai window)
+- Updated tech stack (removed MapLibre, added xmldom/adm-zip)
+- v0.5 status with OGOS migration complete
 
 Generated with [Devin](https://devin.ai)
 

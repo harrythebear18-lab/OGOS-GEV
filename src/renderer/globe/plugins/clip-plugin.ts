@@ -39,8 +39,8 @@ export class ClipPlugin implements EarthEnginePlugin {
 
     // Check CLIP server health
     try {
-      const health = await this.ipc!.invoke('ai:clip:health', {}) as { status: string } | null
-      this.clipHealthy = health?.status === 'ok'
+      const health = await this.ipc!.invoke('ai:clip:health', {}) as { running: boolean; model?: string } | null
+      this.clipHealthy = health?.running === true
       this.status = {
         count: 0,
         status: this.clipHealthy ? 'nominal' : 'error',
