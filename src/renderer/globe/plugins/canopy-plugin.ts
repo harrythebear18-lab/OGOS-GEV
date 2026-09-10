@@ -26,6 +26,7 @@ export class CanopyPlugin implements EarthEnginePlugin {
   private cells: CanopyZone[] = []
   private showNdvi = true
   private showHeight = false
+  private ndviCounts = { denseForest: 0, forest: 0, openForest: 0, shrubland: 0, grassland: 0, barren: 0, water: 0 }
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
@@ -70,10 +71,17 @@ export class CanopyPlugin implements EarthEnginePlugin {
 
   getControls(): PluginControlSpec[] {
     return [
-      { type: 'button', id: 'run', label: 'Run Analysis', variant: 'primary' },
+      { type: 'button', id: 'run', label: 'Run Analysis', variant: 'primary', disabled: !this.lastBboxParsed },
       { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.cells.length === 0 },
       { type: 'separator', id: 'sep1' },
       { type: 'display', id: 'cells', label: 'Zones', value: String(this.cells.length), color: '#4aff8a' },
+      { type: 'display', id: 'denseForest', label: 'Dense Forest', value: String(this.ndviCounts.denseForest), color: '#0a4a0a' },
+      { type: 'display', id: 'forest', label: 'Forest', value: String(this.ndviCounts.forest), color: '#2a6a2a' },
+      { type: 'display', id: 'openForest', label: 'Open Forest', value: String(this.ndviCounts.openForest), color: '#4a8a4a' },
+      { type: 'display', id: 'shrubland', label: 'Shrubland', value: String(this.ndviCounts.shrubland), color: '#8a8a4a' },
+      { type: 'display', id: 'grassland', label: 'Grassland', value: String(this.ndviCounts.grassland), color: '#caca4a' },
+      { type: 'display', id: 'barren', label: 'Barren', value: String(this.ndviCounts.barren), color: '#ca8a4a' },
+      { type: 'display', id: 'water', label: 'Water', value: String(this.ndviCounts.water), color: '#4a8aca' },
     ]
   }
 
@@ -116,8 +124,19 @@ export class CanopyPlugin implements EarthEnginePlugin {
       this.cells = result.zones
       this.dataSource.entities.removeAll()
 
+      // Count zone types
+      this.ndviCounts = { denseForest: 0, forest: 0, openForest: 0, shrubland: 0, grassland: 0, barren: 0, water: 0 }
       for (const zone of result.zones) {
         this.addZoneEntity(zone)
+        switch (zone.type) {
+          case 'dense-forest': this.ndviCounts.denseForest++; break
+          case 'forest': this.ndviCounts.forest++; break
+          case 'open-forest': this.ndviCounts.openForest++; break
+          case 'shrubland': this.ndviCounts.shrubland++; break
+          case 'grassland': this.ndviCounts.grassland++; break
+          case 'barren': this.ndviCounts.barren++; break
+          case 'water': this.ndviCounts.water++; break
+        }
       }
 
       this.status = { count: result.zones.length, status: 'nominal' }
@@ -150,26 +169,40 @@ export class CanopyPlugin implements EarthEnginePlugin {
   }
 
   private ndviColor(ndvi: number): Cesium.Color {
-    // NDVI: -1 to 1. Map to green ramp.
+    // NDVI: -1 to 1. Map to vegetation colors.
     const v = Math.max(-1, Math.min(1, ndvi))
     if (v < 0) {
-      // Water/barren: blue to brown
+      // Water: deep blue to shallow blue
       const t = (v + 1) / 1 // 0 to 1
       return Cesium.Color.fromBytes(
-        Math.round(74 + (139 - 74) * t),
-        Math.round(100 + (90 - 100) * t),
-        Math.round(200 + (43 - 200) * t),
+        Math.round(30 + (74 - 30) * t),
+        Math.round(60 + (138 - 60) * t),
+        Math.round(160 + (255 - 160) * t),
         255,
       )
     }
-    // Vegetation: brown to dark green
-    const t = v // 0 to 1
-    return Cesium.Color.fromBytes(
-      Math.round(139 + (20 - 139) * t),
-      Math.round(90 + (120 - 90) * t),
-      Math.round(43 + (40 - 43) * t),
-      255,
-    )
+    if (v < 0.1) {
+      // Barren: brown
+      return Cesium.Color.fromBytes(180, 140, 80, 255)
+    }
+    if (v < 0.2) {
+      // Grassland: yellow-green
+      return Cesium.Color.fromBytes(200, 190, 80, 255)
+    }
+    if (v < 0.35) {
+      // Shrubland: olive
+      return Cesium.Color.fromBytes(140, 150, 60, 255)
+    }
+    if (v < 0.5) {
+      // Open forest: medium green
+      return Cesium.Color.fromBytes(80, 140, 60, 255)
+    }
+    if (v < 0.7) {
+      // Forest: dark green
+      return Cesium.Color.fromBytes(40, 100, 40, 255)
+    }
+    // Dense forest: very dark green
+    return Cesium.Color.fromBytes(20, 60, 20, 255)
   }
 }
 

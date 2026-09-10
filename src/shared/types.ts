@@ -375,7 +375,7 @@ export interface CanopyAnalysisResponse {
   zones: {
     id: string
     coords: LngLat[]
-    type: 'defoliation' | 'dead-trees' | 'clearing' | 'thinning' | 'healthy-forest'
+    type: 'dense-forest' | 'forest' | 'open-forest' | 'shrubland' | 'grassland' | 'barren' | 'water' | 'defoliation' | 'dead-trees' | 'clearing' | 'thinning' | 'healthy-forest'
     avgNdvi: number
     severity: number
   }[]

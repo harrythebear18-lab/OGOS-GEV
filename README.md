@@ -14,18 +14,29 @@ DEM analysis, and local compute — all in one unified cockpit window.
   floating draw tools, and a plugin manager. No multi-window sprawl.
 - **3D Cesium globe** — Esri imagery base, terrain-aware, with cinematic camera and
   clamped-to-ground overlays. Not a 2D map.
-- **Live feeds** — SGP4 satellites, ADS-B aircraft, AIS vessels, FIRMS fire detections,
-  USGS earthquakes, lightning, NHC storms, space weather, grid assets, network status.
+- **Live feeds** — SGP4 satellites, ADS-B aircraft (rate-limited), AIS vessels, FIRMS fire
+  detections, USGS earthquakes, lightning, NHC storms, space weather, grid assets, network
+  status.
 - **Terrain analysis** — DEM, slope bands, anomaly detection (depressions/prominences),
-  runoff flow paths, flood risk, watershed divides, rest points, fall risk, canopy.
+  runoff flow paths (D8 + Priority-Flood + SCS Curve Number), flood risk (Kirpich time of
+  concentration), watershed divides (ridge polylines), rest points, fall risk, canopy.
+- **Canopy / vegetation** — GIBS MODIS NDVI 8-day composite, 7-class vegetation mapping
+  (dense forest → barren → water), DEM roughness-based canopy height estimation
+  (pseudo-LiDAR), convex-hull zone polygons, grid-based spatial clustering.
 - **SAR / mission tooling** — search zones, remains corridor (fall → flow → find),
   hiker profile calibration, trip parameter physiology, case profiles, road-aware
   A* routing, GeoJSON/KML/KMZ export and import.
 - **OSM vector overlays** — roads, water features (rivers, streams, lakes, springs),
-  fetched via Overpass with multi-server fallback.
+  fetched via Overpass with multi-server fallback and error surfacing.
 - **Weather** — RainViewer radar + satellite, Open-Meteo forecast, rainfall integration
-  with hydrology.
-- **Local AI console** — Ollama (Qwen-VL), CLIP, web search, scene-aware workflows.
+  with hydrology (auto-fetch or manual override).
+- **Local AI console** — Ollama (Qwen-VL) with tool use, CLIP (local FastAPI on :9776),
+  web search, scene-aware workflows, analyst query engine over live data.
+- **Analyst architecture** — analyst query engine (filters, spatial scope, follow-up
+  queries), action runner (8 LLM-callable tools: fly_to, query_data, select_nearest,
+  track_entity, etc.), context store (entity selection + tracking), annotation resolver
+  (Nominatim geocode + Overpass footprints), detection overlay (screen-space brackets
+  with 4 density modes and 4 visual themes).
 - **Offline-first** — tiles and feeds are cached locally; the app runs without a network.
 
 ## Tech stack
@@ -36,8 +47,30 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **3D globe:** CesiumJS
 - **SGP4 / orbital math:** `satellite.js`
 - **KML/KMZ:** `@xmldom/xmldom` + `adm-zip`
-- **AI:** Ollama (Qwen-VL) + CLIP (local FastAPI)
+- **AI:** Ollama (Qwen-VL) + CLIP (local FastAPI, CUDA-backed)
 - **Build output:** `E:/osint-builds/release`
+
+## AI services
+
+The workstation integrates local AI for scene analysis and data queries:
+
+- **Ollama** — `http://localhost:11434` — LLM + vision (Qwen-VL, Qwen-Coder, Llama)
+- **CLIP** — `http://localhost:9776` — image/text embeddings via `scripts/clip_server.py`
+  (FastAPI + open_clip, CUDA-backed)
+
+To start the CLIP server:
+
+```bash
+python scripts/clip_server.py
+# or with explicit Python path:
+C:\Users\htsou\AppData\Local\Programs\Python\Python313\python.exe scripts/clip_server.py
+```
+
+To check AI service status:
+
+```bash
+node scripts/check-ai.js
+```
 
 ## Project structure
 
@@ -48,6 +81,11 @@ osint-sentinel-workstation/
 │   │   ├── index.ts       # single-window lifecycle
 │   │   ├── ipc-handlers.ts # typed IPC router
 │   │   └── services/      # terrain, live feeds, climate, grid, network, AI
+│   │       ├── runoff-service.ts    # D8 + Priority-Flood + SCS hydrology
+│   │       ├── canopy-service.ts    # GIBS NDVI + DEM roughness canopy height
+│   │       ├── ollama-service.ts    # local LLM
+│   │       ├── clip-service.ts      # local embeddings
+│   │       └── live/                # aircraft, vessels, fires, quakes, etc.
 │   ├── preload/           # safe IPC bridge (window.api)
 │   ├── shared/            # IPC channels + shared types
 │   └── renderer/
@@ -57,7 +95,16 @@ osint-sentinel-workstation/
 │           ├── DrawTools.tsx
 │           ├── PluginPanel.tsx
 │           ├── InspectorPanel.tsx
-│           └── plugins/    # 31 Cesium globe plugins
+│           ├── analyst/    # GEV-inspired AI architecture
+│           │   ├── analyst-engine.ts       # query over live features
+│           │   ├── action-runner.ts        # 8 LLM-callable tools
+│           │   ├── context-store.ts        # entity selection + tracking
+│           │   ├── annotation-resolver.ts   # geocode + OSM footprints
+│           │   └── detection-overlay.ts    # screen-space brackets
+│           └── plugins/    # 32 Cesium globe plugins
+├── scripts/
+│   ├── clip_server.py     # CLIP FastAPI server
+│   └── check-ai.js        # AI status checker
 ├── native/openxr-bridge/  # future Quest 3S PC Link
 ├── electron.vite.config.ts
 └── package.json
@@ -65,7 +112,7 @@ osint-sentinel-workstation/
 
 ## Plugin architecture
 
-All 31 plugins follow a unified interface (`EarthEnginePlugin`):
+All 32 plugins follow a unified interface (`EarthEnginePlugin`):
 register / unregister / update / getStats / getControls / onControl.
 
 | Tier | Category | Plugins |
@@ -75,12 +122,25 @@ register / unregister / update / getStats / getControls / onControl.
 | 3 — Live Feeds | live | Fires, Aircraft, Vessels, Lightning, Satellites |
 | 3b — Climate & Ocean | climate | Climate Stations, Storms, Space Weather |
 | 3c — Infrastructure | infrastructure | Grid Assets, Network |
-| 4 — AI & Vision | ai | CLIP, Vision, Web Search, Predictions |
+| 4 — AI & Vision | ai | CLIP, Vision, Web Search, Detection Overlay, Predictions |
 | 5 — Mission Logic | export | Export/Import (GeoJSON/KML/KMZ) |
 | — | vr | OpenXR / Quest 3S scaffold |
 
 Each plugin auto-activates on the selection bbox or LKP pin, renders Cesium entities,
 and exposes controls (toggles, sliders, buttons, displays) in the plugin panel.
+
+## Hydrology model
+
+The runoff/flood analysis uses proper hydrological methods:
+
+- **D8 flow direction** with diagonal distance correction (√2 factor)
+- **Priority-Flood** depression filling (Barnes 2014) — proper spill-point detection
+- **Topological sort** flow accumulation — O(n) instead of O(n²)
+- **SCS Curve Number** runoff model — realistic infiltration (not 100% rainfall → runoff)
+- **Strahler stream ordering** — tributaries vs main channels
+- **Kirpich formula** for time of concentration → peak discharge
+- **Watershed divides** as actual ridge polylines, not bounding boxes
+- **Convex hull** pool polygons from depression clusters
 
 ## Quick start
 
@@ -96,6 +156,19 @@ npm run dev
 This opens the single cockpit window with the 3D globe, plugin panel, and draw tools.
 The globe uses cached tiles; the AI console calls Ollama on `localhost:11434`.
 
+For AI features, start Ollama separately:
+
+```bash
+ollama serve
+ollama pull qwen2.5vl:7b
+```
+
+And optionally start the CLIP server for image/text similarity:
+
+```bash
+python scripts/clip_server.py
+```
+
 ## Build
 
 ```bash
@@ -107,6 +180,10 @@ npm run dist:portable  # portable Windows build
 
 ## Status
 
-v0.5 — OGOS capability migration complete. All 31 plugins active with UI controls.
+v0.6 — GEV AI architecture ported (analyst engine, action runner, detection overlay,
+context store, annotation resolver). Hydrology rewritten with proper D8 + Priority-Flood
++ SCS Curve Number. Canopy rewritten with GIBS NDVI tile fetch + DEM roughness canopy
+height. All 32 plugins active with UI controls.
+
 See `BUILD_PLAN.md` for implementation phases and `MODULE_SURVEY.md` for the full
 capability matrix.

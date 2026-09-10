@@ -31,6 +31,7 @@ export class HydrologyPlugin implements EarthEnginePlugin {
   private lastBbox: string | null = null
   private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
   private showRunoff = true
+  private maxDischargeLps = 0
 
   // Rainfall state
   private autoRainfallMm = 0       // last auto-fetched value
@@ -96,6 +97,7 @@ export class HydrologyPlugin implements EarthEnginePlugin {
       { type: 'slider', id: 'manualRain', label: 'Set Rainfall', min: 0, max: 100, step: 1, value: this.manualRainfallMm, unit: ' mm' },
       { type: 'separator', id: 'sep2' },
       { type: 'display', id: 'flowPaths', label: 'Flow Paths', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('runoff:')).length ?? 0), color: '#4affd4' },
+      { type: 'display', id: 'maxDischarge', label: 'Peak Q', value: `${this.maxDischargeLps.toFixed(0)} L/s`, color: this.maxDischargeLps > 200 ? '#ff4a4a' : this.maxDischargeLps > 50 ? '#ffea4a' : '#4a8aff' },
       { type: 'display', id: 'pools', label: 'Pools', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('pool:')).length ?? 0), color: '#4a8aff' },
       { type: 'display', id: 'floodZones', label: 'Flood Zones', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('flood:')).length ?? 0), color: '#ff4a4a' },
       { type: 'display', id: 'watersheds', label: 'Watersheds', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('watershed-')).length ?? 0), color: '#ffea4a' },
@@ -177,9 +179,11 @@ export class HydrologyPlugin implements EarthEnginePlugin {
       }
 
       this.runoffSource.entities.removeAll()
+      this.maxDischargeLps = 0
 
       // Render flow paths — width and color scaled by discharge
       for (const path of result.flowPaths) {
+        this.maxDischargeLps = Math.max(this.maxDischargeLps, path.dischargeLps)
         this.addRunoffEntity(path)
       }
 
