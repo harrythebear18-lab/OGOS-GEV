@@ -23,6 +23,8 @@ const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.openstreetmap.ru/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.by/api/interpreter',
 ]
 
 /**
@@ -86,7 +88,13 @@ export async function fetchRoads(bounds: [LngLat, LngLat]): Promise<RoadResponse
         continue
       }
 
-      const data = await res.json()
+      const text = await res.text()
+      if (!text.startsWith('{')) {
+        lastError = new Error(`Overpass ${url} returned non-JSON response`)
+        continue
+      }
+
+      const data = JSON.parse(text)
       const segments: RoadSegment[] = []
 
       for (const el of data.elements || []) {

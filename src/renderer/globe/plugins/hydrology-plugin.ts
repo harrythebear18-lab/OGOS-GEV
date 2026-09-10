@@ -1,51 +1,57 @@
 /**
- * Hydrology Plugin — Water features + runoff flow paths.
+ * Hydrology Plugin — Runoff flow paths, pools, flood risk, watershed divides.
  * Tier 1, Priority 4. Terrain + water = core world logic.
  *
  * Renders:
- * - OSM water bodies (streams, lakes, rivers) via IPC
- * - Runoff flow paths from DEM analysis via IPC
+ * - Runoff flow paths from DEM D8 analysis (color-coded by discharge)
+ * - Pooling areas (depressions that collect water)
+ * - Flood risk zones (high discharge + steep slope)
+ * - Watershed divides (ridge lines separating drainage basins)
+ *
+ * Rainfall is auto-fetched from Open-Meteo (last 24h + next 24h) but can
+ * be manually overridden via the slider. This makes the plugin work even
+ * when the network is slow or unavailable.
+ *
+ * Water features (OSM streams/lakes) are handled by the dedicated water-plugin.
  */
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
-import type { WaterFeature, WaterResponse, RunoffAnalysisResponse, WatershedDivide } from '@shared/types'
+import type { RunoffAnalysisResponse, WatershedDivide } from '@shared/types'
 
 export class HydrologyPlugin implements EarthEnginePlugin {
   id = 'hydrology'
-  name = 'Hydrology (Water + Runoff)'
+  name = 'Hydrology (Runoff + Flood)'
   category = 'analysis' as const
 
   private viewer: Cesium.Viewer | null = null
-  private waterSource: Cesium.CustomDataSource | null = null
   private runoffSource: Cesium.CustomDataSource | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private ipc: typeof window.api | null = null
   private lastBbox: string | null = null
   private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
-  private showWater = true
   private showRunoff = true
-  private rainfallMm = 0
-  private lastRainfallBbox: string | null = null
+
+  // Rainfall state
+  private autoRainfallMm = 0       // last auto-fetched value
+  private manualRainfallMm = 0    // user-set value (0 = use auto)
+  private useManualRainfall = false
+  private rainfallSource: 'auto' | 'manual' | 'none' = 'none'
+  private rainfallError: string | null = null
+  private isRunning = false
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
     this.ipc = ctx.ipc
-    this.waterSource = new Cesium.CustomDataSource('hydrology-water')
     this.runoffSource = new Cesium.CustomDataSource('hydrology-runoff')
-    ctx.viewer.dataSources.add(this.waterSource)
     ctx.viewer.dataSources.add(this.runoffSource)
     this.status = { count: 0, status: 'nominal' }
   }
 
   unregister(): void {
-    if (this.waterSource && this.viewer && !this.viewer.isDestroyed?.()) {
-      this.viewer.dataSources.remove(this.waterSource)
-    }
     if (this.runoffSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.runoffSource)
     }
-    this.waterSource = null
     this.runoffSource = null
     this.viewer = null
     this.ipc = null
@@ -67,7 +73,6 @@ export class HydrologyPlugin implements EarthEnginePlugin {
     const height = sceneCtx?.camera?.height
     if (height && height > 500_000) return
 
-    if (this.showWater) this.fetchWater(bbox)
     if (this.showRunoff) this.fetchRunoff(bbox)
   }
 
@@ -76,90 +81,98 @@ export class HydrologyPlugin implements EarthEnginePlugin {
   }
 
   getControls(): PluginControlSpec[] {
+    const effectiveRainfall = this.useManualRainfall ? this.manualRainfallMm : this.autoRainfallMm
+    const sourceLabel = this.useManualRainfall ? 'MANUAL' : this.rainfallSource === 'auto' ? 'AUTO' : '—'
+    const sourceColor = this.useManualRainfall ? '#ffea4a' : this.rainfallSource === 'auto' ? '#4aff8a' : '#6b7d92'
+
     return [
-      { type: 'toggle', id: 'showWater', label: 'Water Features', value: this.showWater },
-      { type: 'toggle', id: 'showRunoff', label: 'Runoff Paths', value: this.showRunoff },
-      { type: 'button', id: 'run', label: 'Run Analysis', variant: 'primary' },
-      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger' },
+      { type: 'toggle', id: 'showRunoff', label: 'Visible', value: this.showRunoff },
+      { type: 'button', id: 'run', label: 'Run Analysis', variant: 'primary', disabled: this.isRunning || !this.lastBboxParsed },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.runoffSource?.entities.values.length === 0 },
       { type: 'separator', id: 'sep1' },
-      { type: 'display', id: 'rainfall', label: 'Rainfall', value: `${this.rainfallMm.toFixed(1)} mm`, color: this.rainfallMm > 10 ? '#ff8a4a' : this.rainfallMm > 2 ? '#ffea4a' : '#4a8aff' },
-      { type: 'display', id: 'waterCount', label: 'Water', value: String(this.waterSource?.entities.values.length ?? 0), color: '#4a8aff' },
-      { type: 'display', id: 'runoffCount', label: 'Runoff', value: String(this.runoffSource?.entities.values.length ?? 0), color: '#ff8a4a' },
+      { type: 'display', id: 'rainfall', label: 'Rainfall', value: `${effectiveRainfall.toFixed(1)} mm`, color: effectiveRainfall > 10 ? '#ff8a4a' : effectiveRainfall > 2 ? '#ffea4a' : '#4a8aff' },
+      { type: 'display', id: 'rainSource', label: 'Source', value: sourceLabel, color: sourceColor },
+      { type: 'toggle', id: 'manualMode', label: 'Manual Override', value: this.useManualRainfall },
+      { type: 'slider', id: 'manualRain', label: 'Set Rainfall', min: 0, max: 100, step: 1, value: this.manualRainfallMm, unit: ' mm' },
+      { type: 'separator', id: 'sep2' },
+      { type: 'display', id: 'flowPaths', label: 'Flow Paths', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('runoff:')).length ?? 0), color: '#4affd4' },
+      { type: 'display', id: 'pools', label: 'Pools', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('pool:')).length ?? 0), color: '#4a8aff' },
+      { type: 'display', id: 'floodZones', label: 'Flood Zones', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('flood:')).length ?? 0), color: '#ff4a4a' },
+      { type: 'display', id: 'watersheds', label: 'Watersheds', value: String(this.runoffSource?.entities.values.filter((e) => e.id.startsWith('watershed-')).length ?? 0), color: '#ffea4a' },
     ]
   }
 
   onControl(id: string, value?: unknown): void {
-    if (id === 'showWater' && typeof value === 'boolean') {
-      this.setWaterVisible(value)
-    } else if (id === 'showRunoff' && typeof value === 'boolean') {
-      this.setRunoffVisible(value)
+    if (id === 'showRunoff' && typeof value === 'boolean') {
+      this.showRunoff = value
+      if (this.runoffSource) this.runoffSource.show = value
     } else if (id === 'run') {
       if (this.lastBboxParsed) {
         this.lastBbox = null  // force re-run
-        if (this.showWater) this.fetchWater(this.lastBboxParsed)
-        if (this.showRunoff) this.fetchRunoff(this.lastBboxParsed)
+        this.fetchRunoff(this.lastBboxParsed)
       }
     } else if (id === 'clear') {
-      this.waterSource?.entities.removeAll()
       this.runoffSource?.entities.removeAll()
       this.lastBbox = null
       this.status = { count: 0, status: 'nominal' }
+    } else if (id === 'manualMode' && typeof value === 'boolean') {
+      this.useManualRainfall = value
+    } else if (id === 'manualRain' && typeof value === 'number') {
+      this.manualRainfallMm = value
+      if (this.useManualRainfall) {
+        // Re-run with new rainfall value
+        if (this.lastBboxParsed) {
+          this.lastBbox = null
+          this.fetchRunoff(this.lastBboxParsed)
+        }
+      }
     }
   }
 
-  setWaterVisible(visible: boolean): void {
-    this.showWater = visible
-    if (this.waterSource) this.waterSource.show = visible
-  }
-
-  setRunoffVisible(visible: boolean): void {
-    this.showRunoff = visible
-    if (this.runoffSource) this.runoffSource.show = visible
-  }
-
-  private async fetchWater(bbox: { west: number; south: number; east: number; north: number }): Promise<void> {
-    if (!this.ipc || !this.waterSource) return
-    this.status = { ...this.status, status: 'loading' }
-    try {
-      const result = await this.ipc.invoke('terrain:water:fetch', {
-        bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
-      }) as WaterResponse | null
-
-      if (!result?.features) {
-        this.status = { count: 0, status: 'nominal' }
-        return
-      }
-
-      this.waterSource.entities.removeAll()
-
-      for (const f of result.features) {
-        this.addWaterEntity(f)
-      }
-
-      this.status = { count: result.features.length, status: 'nominal' }
-    } catch (err) {
-      console.warn('[hydrology] water fetch failed:', err)
-      this.status = { ...this.status, status: 'error', error: String(err) }
-    }
+  private get effectiveRainfallMm(): number {
+    return this.useManualRainfall ? this.manualRainfallMm : this.autoRainfallMm
   }
 
   private async fetchRunoff(bbox: { west: number; south: number; east: number; north: number }): Promise<void> {
-    if (!this.ipc || !this.runoffSource) return
+    if (!this.ipc || !this.runoffSource || this.isRunning) return
+    this.isRunning = true
     this.status = { ...this.status, status: 'loading' }
-    try {
-      // Fetch rainfall for the bbox center (last 24h + next 24h from Open-Meteo)
-      const rainfallMm = await this.ipc.invoke('weather:rainfall', {
-        bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
-      }) as number | null
-      this.rainfallMm = rainfallMm ?? 0
 
-      const result = await this.ipc.invoke('terrain:runoff:analysis', {
+    try {
+      // Step 1: Fetch rainfall (unless manual override is on)
+      let rainfallMm = 0
+      if (this.useManualRainfall) {
+        rainfallMm = this.manualRainfallMm
+        this.rainfallSource = 'manual'
+        this.rainfallError = null
+      } else {
+        try {
+          const result = await this.ipc.weather.rainfall([
+            { lng: bbox.west, lat: bbox.south },
+            { lng: bbox.east, lat: bbox.north },
+          ]) as number | null
+          rainfallMm = result ?? 0
+          this.autoRainfallMm = rainfallMm
+          this.rainfallSource = 'auto'
+          this.rainfallError = null
+        } catch (err) {
+          console.warn('[hydrology] rainfall fetch failed:', err)
+          this.autoRainfallMm = 0
+          this.rainfallSource = 'none'
+          this.rainfallError = 'Rainfall fetch failed — using 0 mm'
+          // Continue with 0 rainfall — flow paths will still render, just with 0 discharge
+        }
+      }
+
+      // Step 2: Run runoff analysis with the effective rainfall
+      const result = await this.ipc.terrain.runoff({
         bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
-        rainfallMm: this.rainfallMm,
+        rainfallMm,
       }) as RunoffAnalysisResponse | null
 
       if (!result?.flowPaths) {
         this.status = { count: 0, status: 'nominal' }
+        this.isRunning = false
         return
       }
 
@@ -177,14 +190,14 @@ export class HydrologyPlugin implements EarthEnginePlugin {
         }
       }
 
-      // Render flood risk zones as red polygons along high-risk flow paths
+      // Render flood risk zones
       if (result.floodZones) {
         for (const zone of result.floodZones) {
           this.addFloodZoneEntity(zone)
         }
       }
 
-      // Render watershed divides as dashed ridge lines
+      // Render watershed divides
       if (result.watershedDivides) {
         for (const divide of result.watershedDivides) {
           this.addWatershedEntity(divide)
@@ -192,40 +205,15 @@ export class HydrologyPlugin implements EarthEnginePlugin {
       }
 
       const totalEntities = result.flowPaths.length + (result.pools?.length ?? 0) + (result.floodZones?.length ?? 0) + (result.watershedDivides?.length ?? 0)
-      this.status = { count: totalEntities, status: 'nominal' }
+      const errorMsg = this.rainfallError && rainfallMm === 0 ? this.rainfallError : undefined
+      this.status = { count: totalEntities, status: 'nominal', error: errorMsg }
     } catch (err) {
       console.warn('[hydrology] runoff analysis failed:', err)
       this.status = { ...this.status, status: 'error', error: String(err) }
-    }
-  }
-
-  private addWaterEntity(f: WaterFeature): void {
-    if (!this.waterSource || f.coords.length < 2) return
-
-    const positions = f.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
-
-    if ((f.type === 'lake' || f.type === 'pond' || f.type === 'reservoir' || f.type === 'wetland') && f.coords.length >= 3) {
-      // Polygon for lakes/ponds/reservoirs
-      this.waterSource.entities.add({
-        id: `water:${f.id}`,
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(positions),
-          material: new Cesium.ColorMaterialProperty(Cesium.Color.fromBytes(74, 138, 255, 100)),
-        },
-        properties: { type: f.type, name: f.name },
-      } as any)
-    } else {
-      // Polyline for streams/rivers
-      this.waterSource.entities.add({
-        id: `water:${f.id}`,
-        polyline: {
-          positions: new Cesium.ConstantProperty(positions),
-          width: new Cesium.ConstantProperty(f.type === 'river' ? 3 : 1.5),
-          material: new Cesium.ColorMaterialProperty(Cesium.Color.fromBytes(74, 138, 255, 200)),
-          clampToGround: true,
-        },
-        properties: { type: f.type, name: f.name },
-      } as any)
+      // Clear lastBbox so the next update() call will retry
+      this.lastBbox = null
+    } finally {
+      this.isRunning = false
     }
   }
 
@@ -241,7 +229,9 @@ export class HydrologyPlugin implements EarthEnginePlugin {
       ? Cesium.Color.fromBytes(255, 100, 74, 230)   // high discharge = red-orange
       : discharge > 50
         ? Cesium.Color.fromBytes(255, 180, 74, 220) // medium = orange
-        : Cesium.Color.fromBytes(74, 200, 255, 220) // low = cyan
+        : discharge > 0
+          ? Cesium.Color.fromBytes(74, 200, 255, 220) // low = cyan
+          : Cesium.Color.fromBytes(100, 130, 160, 180) // no discharge = gray (no rain)
 
     this.runoffSource.entities.add({
       id: `runoff:${path.id}`,

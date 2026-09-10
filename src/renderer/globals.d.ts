@@ -36,6 +36,8 @@ declare global {
         canopy: (req: unknown) => Promise<{ zones: any[] }>
         behavior: (req: unknown) => Promise<{ paths: any[]; densityZones: any[] }>
         water: (bounds: unknown) => Promise<{ features: any[] }>
+        roads: (bounds: unknown) => Promise<{ segments: any[]; bounds: any[] }>
+        remainsCorridor: (req: unknown) => Promise<unknown>
       }
 
       imagery: {
@@ -46,6 +48,7 @@ declare global {
       weather: {
         radar: () => Promise<unknown>
         forecast: (point: { lng: number; lat: number }) => Promise<unknown>
+        rainfall: (bounds: unknown) => Promise<number>
       }
 
       live: {
@@ -62,6 +65,23 @@ declare global {
         clipHealth: () => Promise<{ running: boolean; model?: string }>
         clipSearch: (query: string, bounds?: unknown) => Promise<{ results: any[]; error?: string }>
         webSearch: (query: string, limit?: number) => Promise<{ results: any[] }>
+      }
+
+      files: {
+        exportGeoJSON: (data: unknown) => Promise<string | null>
+        exportKML: (data: unknown) => Promise<string | null>
+        importKml: () => Promise<{ features: any[] } | null>
+        caseProfiles: (id?: string) => Promise<unknown>
+      }
+
+      trip: {
+        derive: (params: unknown) => Promise<unknown>
+        calibrate: (profile: unknown) => Promise<unknown>
+      }
+
+      climateHelpers: {
+        depth: (lat: number, lon: number) => Promise<{ depthM: number } | null>
+        classify: (lat: number, lon: number, stationType?: string) => Promise<unknown>
       }
     }
   }

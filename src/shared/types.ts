@@ -411,6 +411,7 @@ export interface WaterFeature {
 export interface WaterResponse {
   features: WaterFeature[]
   bounds: [LngLat, LngLat]
+  error?: string
 }
 
 /* ------------------------------------------------------------------ */

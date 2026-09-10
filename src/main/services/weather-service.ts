@@ -112,7 +112,7 @@ export async function fetchRainfallForBbox(bounds: [LngLat, LngLat]): Promise<nu
       timezone: 'auto',
     })
     const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15000),
     })
     if (!res.ok) return 0
     const data = await res.json()

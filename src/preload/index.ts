@@ -66,6 +66,7 @@ const api = {
   weather: {
     radar: () => ipcRenderer.invoke(IPC.WEATHER_RADAR),
     forecast: (point: { lng: number; lat: number }) => ipcRenderer.invoke(IPC.WEATHER_FORECAST, point),
+    rainfall: (bounds: unknown) => ipcRenderer.invoke(IPC.WEATHER_RAINFALL, { bounds }),
   },
 
   /* ── Live data (pushed from main) ── */

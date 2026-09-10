@@ -30,6 +30,7 @@ export class WaterPlugin implements EarthEnginePlugin {
   private lastBbox: string | null = null
   private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
   private show = true
+  private lastError: string | null = null
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
@@ -81,6 +82,7 @@ export class WaterPlugin implements EarthEnginePlugin {
       { type: 'display', id: 'rivers', label: 'Rivers/Streams', value: String(this.features.filter((f) => f.type === 'river' || f.type === 'stream').length), color: '#4a8aff' },
       { type: 'display', id: 'lakes', label: 'Lakes/Ponds', value: String(this.features.filter((f) => f.type === 'lake' || f.type === 'pond' || f.type === 'reservoir').length), color: '#4affd4' },
       { type: 'display', id: 'springs', label: 'Springs', value: String(this.features.filter((f) => f.type === 'spring').length), color: '#4aff8a' },
+      ...(this.lastError ? [{ type: 'display' as const, id: 'error', label: 'Error', value: this.lastError.slice(0, 60), color: '#ff4a4a' }] : []),
     ]
   }
 
@@ -120,6 +122,7 @@ export class WaterPlugin implements EarthEnginePlugin {
       }
 
       this.features = result.features
+      this.lastError = result.error ?? null
       this.dataSource.entities.removeAll()
 
       for (const f of result.features) {

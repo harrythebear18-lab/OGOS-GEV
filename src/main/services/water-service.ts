@@ -11,6 +11,8 @@ const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.openstreetmap.ru/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.by/api/interpreter',
 ]
 
 interface OverpassElement {
@@ -43,29 +45,41 @@ export async function fetchWaterFeatures(bounds: [LngLat, LngLat]): Promise<Wate
 
   for (const url of OVERPASS_URLS) {
     try {
+      console.log(`[water] trying ${url}...`)
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'data=' + encodeURIComponent(query),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(25000),
       })
 
       if (!res.ok) {
         lastError = new Error(`Overpass ${url} returned ${res.status}`)
+        console.warn(`[water] ${url} returned ${res.status}`)
         continue
       }
 
-      const data = await res.json()
+      const text = await res.text()
+      // Some mirrors return HTML error pages instead of JSON
+      if (!text.startsWith('{')) {
+        lastError = new Error(`Overpass ${url} returned non-JSON response`)
+        console.warn(`[water] ${url} returned non-JSON: ${text.slice(0, 100)}`)
+        continue
+      }
+
+      const data = JSON.parse(text)
       const features = parseOverpassResponse(data)
+      console.log(`[water] ${url} OK: ${features.length} features`)
       return { features, bounds }
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e))
+      console.warn(`[water] ${url} failed: ${lastError.message}`)
       continue
     }
   }
 
-  console.error('All Overpass servers failed:', lastError?.message)
-  return { features: [], bounds }
+  console.error('[water] All Overpass servers failed:', lastError?.message)
+  return { features: [], bounds, error: lastError?.message ?? 'All Overpass servers failed' }
 }
 
 function parseOverpassResponse(data: { elements?: OverpassElement[] }): WaterFeature[] {
