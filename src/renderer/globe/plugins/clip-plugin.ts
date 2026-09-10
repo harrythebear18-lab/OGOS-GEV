@@ -7,7 +7,7 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 
 interface SimilarityResult {
   id: string
@@ -39,7 +39,7 @@ export class ClipPlugin implements EarthEnginePlugin {
 
     // Check CLIP server health
     try {
-      const health = await this.ipc.invoke('ai:clip:health', {}) as { status: string } | null
+      const health = await this.ipc!.invoke('ai:clip:health', {}) as { status: string } | null
       this.clipHealthy = health?.status === 'ok'
       this.status = {
         count: 0,
@@ -67,6 +67,30 @@ export class ClipPlugin implements EarthEnginePlugin {
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'display', id: 'health', label: 'CLIP Server', value: this.clipHealthy ? 'ONLINE :9776' : 'OFFLINE', color: this.clipHealthy ? '#4aff8a' : '#ff4a4a' },
+      { type: 'input', id: 'query', label: 'Text Query', value: this.queryText ?? '', placeholder: 'e.g. forest clearing, urban sprawl...' },
+      { type: 'button', id: 'searchText', label: 'Search by Text', variant: 'primary', disabled: !this.clipHealthy },
+      { type: 'button', id: 'searchViewport', label: 'Search by Viewport', variant: 'primary', disabled: !this.clipHealthy },
+      { type: 'button', id: 'clear', label: 'Clear Results', variant: 'danger', disabled: this.results.length === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'results', label: 'Matches', value: String(this.results.length), color: '#a04aff' },
+    ]
+  }
+
+  async onControl(id: string, value?: unknown): Promise<void> {
+    if (id === 'query' && typeof value === 'string') {
+      this.queryText = value
+    } else if (id === 'searchText' && this.queryText) {
+      await this.searchByText(this.queryText)
+    } else if (id === 'searchViewport') {
+      await this.searchByViewport()
+    } else if (id === 'clear') {
+      this.clearResults()
+    }
   }
 
   isHealthy(): boolean {
@@ -174,7 +198,6 @@ export class ClipPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.7)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       properties: {
         score: r.score,

@@ -7,16 +7,10 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { FallRiskResponse } from '@shared/types'
 
-interface RiskZone {
-  id: string
-  polygon: number[][]
-  risk: 'low' | 'medium' | 'high' | 'extreme'
-  avgSlope: number
-  curvature: number
-  edgeProximity: number
-}
+type RiskZone = FallRiskResponse['zones'][number]
 
 export class FallRiskPlugin implements EarthEnginePlugin {
   id = 'fall-risk'
@@ -29,6 +23,7 @@ export class FallRiskPlugin implements EarthEnginePlugin {
   private status: PluginStats = { count: 0, status: 'disabled' }
   private zones: RiskZone[] = []
   private lastBbox: string | null = null
+  private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
@@ -52,8 +47,10 @@ export class FallRiskPlugin implements EarthEnginePlugin {
 
   update(ctx: PluginContext): void {
     const sceneCtx = ctx.sceneContext as any
-    const bbox = sceneCtx?.bbox
+    const bbox = sceneCtx?.selectionBbox
     if (!bbox) return
+
+    this.lastBboxParsed = bbox
 
     const bboxKey = `${bbox.west.toFixed(2)},${bbox.south.toFixed(2)},${bbox.east.toFixed(2)},${bbox.north.toFixed(2)}`
     if (bboxKey === this.lastBbox) return
@@ -69,6 +66,29 @@ export class FallRiskPlugin implements EarthEnginePlugin {
     return this.status
   }
 
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'button', id: 'run', label: 'Run Analysis', variant: 'primary' },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.zones.length === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'zones', label: 'Risk Zones', value: String(this.zones.length), color: '#ff4a4a' },
+    ]
+  }
+
+  onControl(id: string): void {
+    if (id === 'run') {
+      if (this.lastBboxParsed) {
+        this.lastBbox = null  // force re-run
+        this.runAnalysis(this.lastBboxParsed)
+      }
+    } else if (id === 'clear') {
+      this.dataSource?.entities.removeAll()
+      this.zones = []
+      this.lastBbox = null
+      this.status = { count: 0, status: 'nominal' }
+    }
+  }
+
   getZones(): RiskZone[] {
     return this.zones
   }
@@ -79,8 +99,8 @@ export class FallRiskPlugin implements EarthEnginePlugin {
 
     try {
       const result = await this.ipc.invoke('terrain:fall-risk', {
-        bbox: [bbox.west, bbox.south, bbox.east, bbox.north],
-      }) as { zones: RiskZone[] } | null
+        bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
+      }) as FallRiskResponse | null
 
       if (!result?.zones) {
         this.status = { count: 0, status: 'nominal' }
@@ -101,9 +121,9 @@ export class FallRiskPlugin implements EarthEnginePlugin {
   }
 
   private addZoneEntity(zone: RiskZone): void {
-    if (!this.dataSource || zone.polygon.length < 3) return
+    if (!this.dataSource || zone.coords.length < 3) return
 
-    const positions = zone.polygon.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat))
+    const positions = zone.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
 
     const color = this.riskColor(zone.risk)
 
@@ -112,24 +132,17 @@ export class FallRiskPlugin implements EarthEnginePlugin {
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(positions),
         material: new Cesium.ColorMaterialProperty(color.withAlpha(0.35)),
-        outline: true,
-        outlineColor: new Cesium.ConstantProperty(color.withAlpha(0.9)),
-        outlineWidth: new Cesium.ConstantProperty(1),
       },
       properties: {
         risk: zone.risk,
-        avgSlope: zone.avgSlope,
-        curvature: zone.curvature,
-        edgeProximity: zone.edgeProximity,
       },
     } as any)
   }
 
   private riskColor(risk: string): Cesium.Color {
     switch (risk) {
-      case 'extreme': return Cesium.Color.fromBytes(255, 74, 74, 255)
-      case 'high': return Cesium.Color.fromBytes(255, 138, 74, 255)
-      case 'medium': return Cesium.Color.fromBytes(255, 234, 74, 255)
+      case 'high': return Cesium.Color.fromBytes(255, 74, 74, 255)
+      case 'moderate': return Cesium.Color.fromBytes(255, 138, 74, 255)
       case 'low': return Cesium.Color.fromBytes(74, 255, 138, 255)
       default: return Cesium.Color.GRAY
     }

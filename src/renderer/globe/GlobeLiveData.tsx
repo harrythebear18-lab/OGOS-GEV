@@ -88,7 +88,6 @@ export default function GlobeLiveData({ viewer, visibleTypes }: GlobeLiveDataPro
             color: new Cesium.ConstantProperty(color),
             outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.5)),
             outlineWidth: new Cesium.ConstantProperty(1),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           properties: {
             liveId: id,
@@ -194,7 +193,6 @@ export default function GlobeLiveData({ viewer, visibleTypes }: GlobeLiveDataPro
             color: new Cesium.ConstantProperty(color),
             outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.5)),
             outlineWidth: new Cesium.ConstantProperty(1),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           properties: {
             liveId: id,

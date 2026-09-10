@@ -10,7 +10,7 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 import { StereoCameraRig } from '../vr/StereoCameraRig'
 
 interface XRSessionState {
@@ -69,7 +69,7 @@ export class VRPlugin implements EarthEnginePlugin {
     ctx.viewer.dataSources.add(this.rightHandDataSource)
 
     try {
-      const status = await this.ipc.invoke('xr:status', {}) as any
+      const status = await this.ipc!.invoke('xr:status', {}) as any
       if (status?.active) {
         this.status = { count: 1, status: 'nominal' }
         this.sessionState = status
@@ -108,6 +108,31 @@ export class VRPlugin implements EarthEnginePlugin {
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    const active = this.sessionState?.active ?? false
+    return [
+      { type: 'display', id: 'runtime', label: 'Runtime', value: this.sessionState?.runtime ?? 'none', color: this.sessionState ? '#4aff8a' : '#6b7d92' },
+      { type: 'display', id: 'hmd', label: 'HMD', value: this.sessionState?.hmdName ?? 'not detected', color: this.sessionState ? '#4aff8a' : '#6b7d92' },
+      active
+        ? { type: 'button', id: 'stop', label: 'Stop VR Session', variant: 'danger' }
+        : { type: 'button', id: 'start', label: 'Start VR Session', variant: 'primary' },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'state', label: 'Session', value: active ? 'ACTIVE' : 'INACTIVE', color: active ? '#4aff8a' : '#6b7d92' },
+      ...(this.sessionState ? [
+        { type: 'display', id: 'refresh', label: 'Refresh Rate', value: `${this.sessionState.refreshRate}Hz`, color: '#4a9eff' } as PluginControlSpec,
+        { type: 'display', id: 'resolution', label: 'Render', value: `${this.sessionState.renderWidth}x${this.sessionState.renderHeight}`, color: '#4a9eff' } as PluginControlSpec,
+      ] : []),
+    ]
+  }
+
+  async onControl(id: string): Promise<void> {
+    if (id === 'start') {
+      await this.startSession()
+    } else if (id === 'stop') {
+      await this.stopSession()
+    }
   }
 
   isSessionActive(): boolean {
@@ -224,7 +249,6 @@ export class VRPlugin implements EarthEnginePlugin {
           color: side === 'left' ? Cesium.Color.fromBytes(74, 158, 255, 255) : Cesium.Color.fromBytes(255, 138, 74, 255),
           outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
           outlineWidth: 1,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       } as any)
     }

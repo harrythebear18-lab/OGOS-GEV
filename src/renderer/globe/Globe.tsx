@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import * as Cesium from 'cesium'
-import { buildEsriProvider, buildGibsProvider, buildFlatTerrain } from './imageryProviders'
-import type { GIBSLayer } from '@shared/types'
+import { buildEsriProvider, buildGibsProvider, buildFlatTerrain, buildEsriTransportationProvider, buildEsriReferenceProvider } from './imageryProviders'
+import { DrawingManager } from './DrawingManager'
+import type { GIBSLayer, DrawMode, Selection, LngLat } from '@shared/types'
 
 Cesium.Ion.defaultAccessToken = ''
 
@@ -12,8 +13,15 @@ interface GlobeProps {
   terrain3d: boolean
   hillshade: boolean
   terrainExaggeration: number
+  roadsVisible: boolean
+  labelsVisible: boolean
   onViewerReady: (viewer: Cesium.Viewer) => void
   onCameraMove: (viewport: unknown) => void
+  drawMode: DrawMode
+  onSelectionChange: (sel: Selection | null) => void
+  onPinPlace: (point: LngLat) => void
+  selection: Selection | null
+  lkpPin: LngLat | null
 }
 
 export default function Globe({
@@ -23,11 +31,21 @@ export default function Globe({
   terrain3d,
   hillshade,
   terrainExaggeration,
+  roadsVisible,
+  labelsVisible,
   onViewerReady,
   onCameraMove,
+  drawMode,
+  onSelectionChange,
+  onPinPlace,
+  selection,
+  lkpPin,
 }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<Cesium.Viewer | null>(null)
+  const drawingRef = useRef<DrawingManager | null>(null)
+  const roadsLayerRef = useRef<Cesium.ImageryLayer | null>(null)
+  const labelsLayerRef = useRef<Cesium.ImageryLayer | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState('starting')
@@ -111,6 +129,9 @@ export default function Globe({
       // depthTestAgainstTerrain = true prevents seeing through hills/mountains
       // and helps the camera collision system work properly
       globe.depthTestAgainstTerrain = true
+      // Fill the polar regions (above ~85° lat) where Web Mercator imagery has no tiles.
+      // Without this, the poles appear as transparent holes in the globe.
+      globe.baseColor = Cesium.Color.fromBytes(20, 30, 45, 255)
       // Disable expensive atmosphere effects
       globe.showGroundAtmosphere = false
       scene.fog.enabled = false
@@ -270,6 +291,11 @@ export default function Globe({
       setReady(true)
       setStatus('ready')
       onViewerReady(v)
+
+      // Create drawing manager for bbox/polygon/line selection
+      drawingRef.current = new DrawingManager(v, onSelectionChange, onPinPlace)
+      console.log('[Globe] DrawingManager created')
+
       console.log('[Globe] READY — viewer passed to parent')
     } catch (e) {
       console.error('[Globe] FATAL during init:', e)
@@ -280,6 +306,10 @@ export default function Globe({
 
     return () => {
       console.log('[Globe] cleanup — destroying viewer')
+      if (drawingRef.current) {
+        drawingRef.current.destroy()
+        drawingRef.current = null
+      }
       if (viewerRef.current) {
         try {
           viewerRef.current.destroy()
@@ -298,22 +328,39 @@ export default function Globe({
     if (!v) return
 
     v.imageryLayers.removeAll()
+    roadsLayerRef.current = null
+    labelsLayerRef.current = null
 
     if (!imageryLayer || imageryLayer === 'esri') {
       const layer = v.imageryLayers.addImageryProvider(buildEsriProvider())
       layer.alpha = imageryOpacity
-      return
+    } else {
+      const gibsLayer = gibsLayers.find((l) => l.id === imageryLayer)
+      if (gibsLayer) {
+        const layer = v.imageryLayers.addImageryProvider(buildGibsProvider(gibsLayer) as any)
+        layer.alpha = imageryOpacity
+      } else {
+        const layer = v.imageryLayers.addImageryProvider(buildEsriProvider())
+        layer.alpha = imageryOpacity
+      }
     }
 
-    const gibsLayer = gibsLayers.find((l) => l.id === imageryLayer)
-    if (gibsLayer) {
-      const layer = v.imageryLayers.addImageryProvider(buildGibsProvider(gibsLayer) as any)
-      layer.alpha = imageryOpacity
-    } else {
-      const layer = v.imageryLayers.addImageryProvider(buildEsriProvider())
-      layer.alpha = imageryOpacity
+    // Re-add road/label overlays on top of the new base imagery
+    if (roadsVisible) {
+      const layer = v.imageryLayers.addImageryProvider(buildEsriTransportationProvider())
+      layer.alpha = 0.9
+      roadsLayerRef.current = layer
     }
-  }, [imageryLayer, gibsLayers])
+    if (labelsVisible) {
+      const layer = v.imageryLayers.addImageryProvider(buildEsriReferenceProvider())
+      layer.alpha = 0.9
+      labelsLayerRef.current = layer
+    }
+  }, [imageryLayer, gibsLayers, roadsVisible, labelsVisible])
+
+  // Road network + place labels overlays (Esri Transportation + Reference)
+  // are managed by the base imagery effect above — they're re-added on top
+  // whenever the base imagery changes, and toggled via roadsVisible/labelsVisible.
 
   // Apply opacity
   useEffect(() => {
@@ -347,28 +394,70 @@ export default function Globe({
     return () => { cancelled = true }
   }, [terrain3d, terrainExaggeration])
 
-  // Toggle hillshade
+  // Toggle hillshade — with natural TOD orbit (full day cycle in 30 minutes)
   useEffect(() => {
     const v = viewerRef.current
     if (!v) return
 
+    let rafId = 0
+
     const timeout = setTimeout(() => {
       requestAnimationFrame(() => {
         if (hillshade) {
+          // Start at noon for a balanced starting light
           const now = new Date()
           now.setHours(12, 0, 0, 0)
           v.clock.currentTime = Cesium.JulianDate.fromDate(now)
-          v.clock.shouldAnimate = false
+          // 48x speed: 24h compressed into 30 minutes (86400s / 1800s = 48)
+          v.clock.multiplier = 48.0
+          v.clock.shouldAnimate = true
           v.scene.globe.enableLighting = true
+          // Keep maximumRenderTimeChange at Infinity — we manually request renders
+          // via a RAF loop for smooth 60fps sun movement
+          v.scene.maximumRenderTimeChange = Infinity
+
+          // Continuous render loop while hillshade is active
+          const renderLoop = () => {
+            v.scene.requestRender()
+            rafId = requestAnimationFrame(renderLoop)
+          }
+          rafId = requestAnimationFrame(renderLoop)
         } else {
           v.scene.globe.enableLighting = false
           v.clock.shouldAnimate = true
+          v.clock.multiplier = 1.0
+          v.scene.maximumRenderTimeChange = Infinity
         }
+        v.scene.requestRender()
       })
     }, 100)
 
-    return () => clearTimeout(timeout)
+    return () => {
+      clearTimeout(timeout)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
   }, [hillshade])
+
+  // Sync draw mode to DrawingManager
+  useEffect(() => {
+    if (drawingRef.current) {
+      drawingRef.current.setMode(drawMode)
+    }
+  }, [drawMode])
+
+  // Sync selection rendering to DrawingManager
+  useEffect(() => {
+    if (drawingRef.current) {
+      drawingRef.current.renderSelection(selection)
+    }
+  }, [selection])
+
+  // Sync LKP pin rendering to DrawingManager
+  useEffect(() => {
+    if (drawingRef.current) {
+      drawingRef.current.renderPin(lkpPin)
+    }
+  }, [lkpPin])
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>

@@ -5,12 +5,14 @@ import SatelliteOverlay from './SatelliteOverlay'
 import LayerPanel from './LayerPanel'
 import Hud from './Hud'
 import CockpitShell from './CockpitShell'
+import DrawTools from './DrawTools'
 import PluginPanel from './plugins/PluginPanel'
 import InspectorPanel from './InspectorPanel'
 import StatusBar from './StatusBar'
 import { pluginManager } from './plugins'
 import type { PluginContext } from './plugins'
-import type { GIBSLayer } from '@shared/types'
+import type { GIBSLayer, DrawMode, Selection, LngLat } from '@shared/types'
+import { selectionToBBox } from '@shared/types'
 
 // ── Earth Engine v0.3 — cockpit windowing + plugin architecture ──
 
@@ -30,6 +32,8 @@ export default function App() {
   const [terrain3d, setTerrain3d] = useState<boolean>(false)
   const [hillshade, setHillshade] = useState<boolean>(false)
   const [terrainExaggeration, setTerrainExaggeration] = useState<number>(2.0)
+  const [roadsVisible, setRoadsVisible] = useState<boolean>(true)
+  const [labelsVisible, setLabelsVisible] = useState<boolean>(true)
 
   // ── Scene Context ──
   const viewportRef = useRef<unknown>(null)
@@ -37,6 +41,11 @@ export default function App() {
 
   // ── Live Feed ──
   const [satellitesVisible, setSatellitesVisible] = useState<boolean>(true)
+
+  // ── Drawing / Selection ──
+  const [drawMode, setDrawMode] = useState<DrawMode>('none')
+  const [selection, setSelection] = useState<Selection | null>(null)
+  const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
 
   // ── Plugin state ──
   const [activePlugins, setActivePlugins] = useState<Set<string>>(new Set())
@@ -72,13 +81,21 @@ export default function App() {
     pluginUpdateTimer.current = setTimeout(() => {
       pluginUpdateTimer.current = null
       if (pluginCtxRef.current) {
+        // Merge user-drawn selection bbox into scene context for plugins
+        const selBbox = selection ? selectionToBBox(selection) : null
+        const vp = viewportRef.current as Record<string, unknown> | null
         pluginManager.updateAll({
           ...pluginCtxRef.current,
-          sceneContext: vp,
+          sceneContext: {
+            ...(vp ?? {}),
+            selection,
+            selectionBbox: selBbox,
+            lkp: lkpPin,
+          },
         })
       }
     }, 1000)
-  }, [])
+  }, [selection, lkpPin])
 
   // Apply opacity to base imagery
   useEffect(() => {
@@ -100,21 +117,41 @@ export default function App() {
       if (pluginCtxRef.current) {
         pluginManager.activate(id)
         setActivePlugins((prev) => new Set(prev).add(id))
+        // Immediately send current scene context to the newly-activated plugin
+        // so it can process the current selection without waiting for a change
+        const selBbox = selection ? selectionToBBox(selection) : null
+        const vp = viewportRef.current as Record<string, unknown> | null
+        pluginManager.updateAll({
+          ...pluginCtxRef.current,
+          sceneContext: {
+            ...(vp ?? {}),
+            selection,
+            selectionBbox: selBbox,
+            lkp: lkpPin,
+          },
+        })
       }
     }
-  }, [activePlugins])
+  }, [activePlugins, selection, lkpPin])
 
   // Set up plugin context when viewer is ready
   useEffect(() => {
     if (!viewer) return
+    const selBbox = selection ? selectionToBBox(selection) : null
+    const vp = viewportRef.current as Record<string, unknown> | null
     const ctx: PluginContext = {
       viewer,
-      sceneContext: viewportRef.current,
+      sceneContext: {
+        ...(vp ?? {}),
+        selection,
+        selectionBbox: selBbox,
+        lkp: lkpPin,
+      },
       ipc: window.api,
     }
     pluginCtxRef.current = ctx
     pluginManager.setContext(ctx)
-  }, [viewer])
+  }, [viewer, selection, lkpPin])
 
   // Shutdown plugins on unmount
   useEffect(() => {
@@ -146,6 +183,10 @@ export default function App() {
           onHillshadeToggle={() => setHillshade(!hillshade)}
           terrainExaggeration={terrainExaggeration}
           onTerrainExaggerationChange={setTerrainExaggeration}
+          roadsVisible={roadsVisible}
+          onRoadsToggle={() => setRoadsVisible(!roadsVisible)}
+          labelsVisible={labelsVisible}
+          onLabelsToggle={() => setLabelsVisible(!labelsVisible)}
         />
       }
       leftPlugins={
@@ -159,6 +200,8 @@ export default function App() {
         <MemoInspectorPanel
           plugins={allPlugins}
           activePlugins={activePlugins}
+          selection={selection}
+          lkp={lkpPin}
         />
       }
       statusBar={
@@ -166,6 +209,8 @@ export default function App() {
           plugins={allPlugins}
           activePlugins={activePlugins}
           viewport={hudViewport}
+          hillshade={hillshade}
+          viewer={viewer}
         />
       }
     >
@@ -176,8 +221,26 @@ export default function App() {
         terrain3d={terrain3d}
         hillshade={hillshade}
         terrainExaggeration={terrainExaggeration}
+        roadsVisible={roadsVisible}
+        labelsVisible={labelsVisible}
         onViewerReady={setViewer}
         onCameraMove={onCameraMove}
+        drawMode={drawMode}
+        onSelectionChange={setSelection}
+        onPinPlace={setLkpPin}
+        selection={selection}
+        lkpPin={lkpPin}
+      />
+
+      {/* Drawing toolbar */}
+      <DrawTools
+        mode={drawMode}
+        onModeChange={setDrawMode}
+        onClear={() => {
+          setSelection(null)
+          setLkpPin(null)
+        }}
+        hasSelection={selection !== null || lkpPin !== null}
       />
 
       {/* Satellites overlay */}

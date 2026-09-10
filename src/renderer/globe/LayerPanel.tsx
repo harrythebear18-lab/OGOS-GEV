@@ -17,6 +17,10 @@ interface LayerPanelProps {
   onHillshadeToggle: () => void
   terrainExaggeration: number
   onTerrainExaggerationChange: (v: number) => void
+  roadsVisible: boolean
+  onRoadsToggle: () => void
+  labelsVisible: boolean
+  onLabelsToggle: () => void
 }
 
 const GIBS_CATEGORIES: { key: GIBSLayer['category']; label: string; color: string }[] = [
@@ -40,6 +44,10 @@ export default function LayerPanel({
   onHillshadeToggle,
   terrainExaggeration,
   onTerrainExaggerationChange,
+  roadsVisible,
+  onRoadsToggle,
+  labelsVisible,
+  onLabelsToggle,
 }: LayerPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     base: true,
@@ -97,6 +105,30 @@ export default function LayerPanel({
                 </div>
               ) : null
             })()}
+          </div>
+        )}
+      </div>
+
+      {/* Road Network + Labels */}
+      <div style={panelStyle.section}>
+        <button style={panelStyle.sectionHeader(expanded.base)} onClick={() => toggle('base')}>
+          <span>{expanded.base ? '▼' : '▶'}</span> ROAD NETWORK
+        </button>
+        {expanded.base && (
+          <div style={panelStyle.sectionBody}>
+            <label style={panelStyle.layerRow}>
+              <input type="checkbox" checked={roadsVisible} onChange={onRoadsToggle} style={panelStyle.checkbox} />
+              <span style={panelStyle.layerDot('#ffea4a')} />
+              <span style={panelStyle.layerName}>Roads & Highways</span>
+            </label>
+            <label style={panelStyle.layerRow}>
+              <input type="checkbox" checked={labelsVisible} onChange={onLabelsToggle} style={panelStyle.checkbox} />
+              <span style={panelStyle.layerDot('#c0c8d0')} />
+              <span style={panelStyle.layerName}>Place Labels & Boundaries</span>
+            </label>
+            <p style={panelStyle.hint}>
+              Esri Transportation + Reference overlays. Vector roads, highways, rail, place names, and administrative boundaries on top of the satellite base imagery.
+            </p>
           </div>
         )}
       </div>
@@ -162,10 +194,10 @@ export default function LayerPanel({
         )}
       </div>
 
-      {/* Live Data — satellites only for v0.1 */}
+      {/* Live Data — satellites (overlay-level, others are plugins) */}
       <div style={panelStyle.section}>
         <button style={panelStyle.sectionHeader(expanded.live)} onClick={() => toggle('live')}>
-          <span>{expanded.live ? '▼' : '▶'}</span> LIVE FEEDS
+          <span>{expanded.live ? '▼' : '▶'}</span> LIVE OVERLAYS
         </button>
         {expanded.live && (
           <div style={panelStyle.sectionBody}>
@@ -180,7 +212,7 @@ export default function LayerPanel({
               <span style={panelStyle.layerName}>Satellites (ISS SGP4)</span>
             </label>
             <p style={panelStyle.hint}>
-              Other feeds (earthquakes, aircraft, fires, vessels, lightning) will be re-added as plugins.
+              All other feeds (aircraft, fires, vessels, lightning, climate, grid, network) are in the PLUGINS tab.
             </p>
           </div>
         )}
@@ -194,7 +226,7 @@ const panelStyle = {
     background: 'rgba(11, 15, 20, 0.92)',
     border: '1px solid #1e2a3a',
     borderRadius: 4,
-    width: 240,
+    width: '100%',
     color: '#c0c8d0',
     fontFamily: 'monospace' as const,
     fontSize: 11,

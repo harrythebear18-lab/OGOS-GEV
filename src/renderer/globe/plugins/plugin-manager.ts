@@ -6,6 +6,8 @@
  * - unregister() — detach cleanly
  * - update(sceneContext) — react to scene changes
  * - getStats() — health/status for UI
+ * - getControls() — declarative UI controls for the inspector panel
+ * - onControl(id, value) — handle control interactions
  *
  * Plugins own their own UI panels (collapsible, toggleable).
  * The plugin manager handles lifecycle, ordering, and shared state.
@@ -16,7 +18,7 @@ import * as Cesium from 'cesium'
 export interface PluginContext {
   viewer: Cesium.Viewer
   sceneContext: unknown
-  ipc: typeof window.api
+  ipc: any  // typeof window.api — typed as any to allow dynamic property access
 }
 
 export interface PluginStats {
@@ -25,13 +27,80 @@ export interface PluginStats {
   error?: string
 }
 
+/* ── Declarative control specs for the inspector panel ── */
+
+export type PluginControlSpec =
+  | PluginButtonSpec
+  | PluginToggleSpec
+  | PluginSliderSpec
+  | PluginSelectSpec
+  | PluginInputSpec
+  | PluginDisplaySpec
+  | PluginSeparatorSpec
+
+export interface PluginButtonSpec {
+  type: 'button'
+  id: string
+  label: string
+  variant?: 'primary' | 'danger' | 'default'
+  disabled?: boolean
+}
+
+export interface PluginToggleSpec {
+  type: 'toggle'
+  id: string
+  label: string
+  value: boolean
+}
+
+export interface PluginSliderSpec {
+  type: 'slider'
+  id: string
+  label: string
+  value: number
+  min: number
+  max: number
+  step?: number
+  unit?: string
+}
+
+export interface PluginSelectSpec {
+  type: 'select'
+  id: string
+  label: string
+  value: string
+  options: { label: string; value: string }[]
+}
+
+export interface PluginInputSpec {
+  type: 'input'
+  id: string
+  label: string
+  value: string
+  placeholder?: string
+}
+
+export interface PluginDisplaySpec {
+  type: 'display'
+  id: string
+  label: string
+  value: string
+  color?: string
+}
+
+export interface PluginSeparatorSpec {
+  type: 'separator'
+  id: string
+  label?: string
+}
+
 export interface EarthEnginePlugin {
   /** Unique plugin ID */
   id: string
   /** Human-readable name */
   name: string
   /** Category for UI grouping */
-  category: 'globe' | 'analysis' | 'live' | 'ai' | 'export' | 'vr'
+  category: 'globe' | 'analysis' | 'live' | 'climate' | 'infrastructure' | 'ai' | 'export' | 'vr'
   /** Attach to globe — called once when plugin is enabled */
   register(ctx: PluginContext): void
   /** Detach cleanly — called when plugin is disabled or app closes */
@@ -40,6 +109,10 @@ export interface EarthEnginePlugin {
   update?(ctx: PluginContext): void
   /** Health/status for UI */
   getStats?(): PluginStats
+  /** Declarative controls for the inspector panel */
+  getControls?(): PluginControlSpec[]
+  /** Handle a control interaction (button click, slider change, etc.) */
+  onControl?(id: string, value?: unknown): void
 }
 
 class PluginManager {

@@ -48,10 +48,12 @@ const api = {
     restPoints: (req: unknown) => ipcRenderer.invoke(IPC.REST_POINTS, req),
     routePlan: (req: unknown) => ipcRenderer.invoke(IPC.ROUTE_PLAN, req),
     fallRisk: (req: unknown) => ipcRenderer.invoke(IPC.FALL_RISK, req),
+    remainsCorridor: (req: unknown) => ipcRenderer.invoke(IPC.REMAINS_CORRIDOR, req),
     runoff: (req: unknown) => ipcRenderer.invoke(IPC.RUNOFF_ANALYSIS, req),
     canopy: (req: unknown) => ipcRenderer.invoke(IPC.CANOPY_ANALYSIS, req),
     behavior: (req: unknown) => ipcRenderer.invoke(IPC.BEHAVIOR_ENGINE, req),
     water: (bounds: unknown) => ipcRenderer.invoke(IPC.WATER_FETCH, { bounds }),
+    roads: (bounds: unknown) => ipcRenderer.invoke(IPC.ROAD_FETCH, { bounds }),
   },
 
   /* ── Imagery ── */
@@ -84,6 +86,102 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
       ipcRenderer.on(IPC.FIRE_UPDATE, handler)
     },
+    onVessel: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.VESSEL_UPDATE, handler)
+    },
+    onLightning: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.LIGHTNING_UPDATE, handler)
+    },
+  },
+
+  /* ── Climate / Ocean (pushed from main) ── */
+  climate: {
+    onUpdate: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.CLIMATE_UPDATE, handler)
+    },
+    onIntegrity: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.CLIMATE_INTEGRITY, handler)
+    },
+    onAlert: (cb: (alert: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
+      ipcRenderer.on(IPC.CLIMATE_ALERT, handler)
+    },
+    setViewport: (bounds: unknown) => ipcRenderer.send(IPC.CLIMATE_SET_VIEWPORT, bounds),
+    whitelist: (stationId: string) => ipcRenderer.invoke(IPC.CLIMATE_WHITELIST, stationId),
+    unwhitelist: (stationId: string) => ipcRenderer.invoke(IPC.CLIMATE_UNWHITELIST, stationId),
+  },
+
+  /* ── Storms (pushed) ── */
+  storms: {
+    onUpdate: (cb: (storms: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, storms: unknown) => cb(storms)
+      ipcRenderer.on(IPC.STORM_UPDATE, handler)
+    },
+    onTrackUpdate: (cb: (tracks: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, tracks: unknown) => cb(tracks)
+      ipcRenderer.on(IPC.STORM_TRACK_UPDATE, handler)
+    },
+  },
+
+  /* ── Space weather (pushed) ── */
+  spaceWeather: {
+    onUpdate: (cb: (data: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, data: unknown) => cb(data)
+      ipcRenderer.on(IPC.SPACE_WEATHER_UPDATE, handler)
+    },
+  },
+
+  /* ── Predictions (pushed) ── */
+  predictions: {
+    onUpdate: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.PREDICTION_UPDATE, handler)
+    },
+  },
+
+  /* ── Grid (pushed + invoke) ── */
+  grid: {
+    onUpdate: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.GRID_UPDATE, handler)
+    },
+    onAlert: (cb: (alert: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
+      ipcRenderer.on(IPC.GRID_ALERT, handler)
+    },
+    whitelist: (assetId: string) => ipcRenderer.invoke(IPC.GRID_WHITELIST, assetId),
+    unwhitelist: (assetId: string) => ipcRenderer.invoke(IPC.GRID_UNWHITELIST, assetId),
+  },
+
+  /* ── Network (pushed + invoke) ── */
+  network: {
+    onUpdate: (cb: (update: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
+      ipcRenderer.on(IPC.NET_UPDATE, handler)
+    },
+    onAlert: (cb: (alert: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
+      ipcRenderer.on(IPC.NET_ALERT, handler)
+    },
+    onHealth: (cb: (health: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, health: unknown) => cb(health)
+      ipcRenderer.on(IPC.NET_HEALTH, handler)
+    },
+    onVpn: (cb: (status: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, status: unknown) => cb(status)
+      ipcRenderer.on(IPC.NET_VPN, handler)
+    },
+    onUserLocation: (cb: (loc: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, loc: unknown) => cb(loc)
+      ipcRenderer.on(IPC.NET_USER_LOCATION, handler)
+    },
+    refreshVpn: () => ipcRenderer.invoke(IPC.NET_VPN_REFRESH),
+    speedTest: () => ipcRenderer.invoke(IPC.NET_SPEEDTEST_RUN),
+    dnsTest: () => ipcRenderer.invoke(IPC.NET_DNSTEST_RUN),
   },
 
   /* ── AI ── */
@@ -98,6 +196,27 @@ const api = {
       ipcRenderer.invoke(IPC.AI_CLIP_SEARCH, { query, bounds }),
     webSearch: (query: string, limit?: number) =>
       ipcRenderer.invoke(IPC.WEB_SEARCH, { query, limit }),
+  },
+
+  /* ── Export / Import / Case profiles ── */
+  files: {
+    exportGeoJSON: (data: unknown) => ipcRenderer.invoke(IPC.EXPORT_GEOJSON, data),
+    exportKML: (data: unknown) => ipcRenderer.invoke(IPC.EXPORT_KML, data),
+    importKml: () => ipcRenderer.invoke(IPC.IMPORT_KML),
+    caseProfiles: (id?: string) => ipcRenderer.invoke(IPC.CASE_PROFILES, id ? { id } : {}),
+  },
+
+  /* ── Trip params + Hiker calibration ── */
+  trip: {
+    derive: (params: unknown) => ipcRenderer.invoke(IPC.TRIP_DERIVE, { params }),
+    calibrate: (profile: unknown) => ipcRenderer.invoke(IPC.HIKER_CALIBRATE, { profile }),
+  },
+
+  /* ── Climate helpers (bathymetry + region classification) ── */
+  climateHelpers: {
+    depth: (lat: number, lon: number) => ipcRenderer.invoke(IPC.BATHYMETRY_DEPTH, { lat, lon }),
+    classify: (lat: number, lon: number, stationType?: string) =>
+      ipcRenderer.invoke(IPC.REGION_CLASSIFY, { lat, lon, stationType }),
   },
 }
 

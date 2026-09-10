@@ -29,6 +29,32 @@ export function buildEsriProvider(): Cesium.ImageryProvider {
 }
 
 /**
+ * Esri World Transportation — roads, highways, rail.
+ * Transparent background. Designed to overlay on top of World Imagery.
+ * Ported from OSINT-Global-OS (MapCanvas.tsx esri_transportation layer).
+ */
+export function buildEsriTransportationProvider(): Cesium.ImageryProvider {
+  return new Cesium.UrlTemplateImageryProvider({
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    maximumLevel: 19,
+    credit: new Cesium.Credit('Esri World Transportation'),
+  })
+}
+
+/**
+ * Esri World Boundaries and Places — roads, place labels, boundaries.
+ * Transparent background. Designed to overlay on top of World Imagery.
+ * Ported from OSINT-Global-OS (MapCanvas.tsx esri_reference layer).
+ */
+export function buildEsriReferenceProvider(): Cesium.ImageryProvider {
+  return new Cesium.UrlTemplateImageryProvider({
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    maximumLevel: 19,
+    credit: new Cesium.Credit('Esri World Boundaries and Places'),
+  })
+}
+
+/**
  * 3D terrain provider — ArcGIS World Elevation (built-in Cesium provider).
  * Uses `fromUrl` async factory. No manual PNG decode — Cesium handles it natively.
  */

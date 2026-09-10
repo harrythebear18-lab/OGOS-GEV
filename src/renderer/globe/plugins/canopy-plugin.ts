@@ -7,16 +7,10 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { CanopyAnalysisResponse } from '@shared/types'
 
-interface CanopyCell {
-  id: string
-  polygon: number[][] // [lon, lat]
-  ndvi: number
-  biome: string
-  canopyHeight: number // meters
-  groundHeight: number // meters (pseudo-LiDAR corrected)
-}
+type CanopyZone = CanopyAnalysisResponse['zones'][number]
 
 export class CanopyPlugin implements EarthEnginePlugin {
   id = 'canopy'
@@ -28,7 +22,8 @@ export class CanopyPlugin implements EarthEnginePlugin {
   private ipc: typeof window.api | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private lastBbox: string | null = null
-  private cells: CanopyCell[] = []
+  private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
+  private cells: CanopyZone[] = []
   private showNdvi = true
   private showHeight = false
 
@@ -54,8 +49,10 @@ export class CanopyPlugin implements EarthEnginePlugin {
 
   update(ctx: PluginContext): void {
     const sceneCtx = ctx.sceneContext as any
-    const bbox = sceneCtx?.bbox
+    const bbox = sceneCtx?.selectionBbox
     if (!bbox) return
+
+    this.lastBboxParsed = bbox
 
     const bboxKey = `${bbox.west.toFixed(2)},${bbox.south.toFixed(2)},${bbox.east.toFixed(2)},${bbox.north.toFixed(2)}`
     if (bboxKey === this.lastBbox) return
@@ -71,23 +68,34 @@ export class CanopyPlugin implements EarthEnginePlugin {
     return this.status
   }
 
-  setNdviVisible(visible: boolean): void {
-    this.showNdvi = visible
-    this.showHeight = !visible
-    this.rerender()
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'button', id: 'run', label: 'Run Analysis', variant: 'primary' },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.cells.length === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'cells', label: 'Zones', value: String(this.cells.length), color: '#4aff8a' },
+    ]
   }
 
-  setHeightVisible(visible: boolean): void {
-    this.showHeight = visible
-    this.showNdvi = !visible
-    this.rerender()
+  onControl(id: string, value?: unknown): void {
+    if (id === 'run') {
+      if (this.lastBboxParsed) {
+        this.lastBbox = null  // force re-run
+        this.runAnalysis(this.lastBboxParsed)
+      }
+    } else if (id === 'clear') {
+      this.dataSource?.entities.removeAll()
+      this.cells = []
+      this.lastBbox = null
+      this.status = { count: 0, status: 'nominal' }
+    }
   }
 
   private rerender(): void {
     if (!this.dataSource) return
     this.dataSource.entities.removeAll()
-    for (const cell of this.cells) {
-      this.addCellEntity(cell)
+    for (const zone of this.cells) {
+      this.addZoneEntity(zone)
     }
   }
 
@@ -97,53 +105,46 @@ export class CanopyPlugin implements EarthEnginePlugin {
 
     try {
       const result = await this.ipc.invoke('terrain:canopy:analysis', {
-        bbox: [bbox.west, bbox.south, bbox.east, bbox.north],
-      }) as { cells: CanopyCell[] } | null
+        bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
+      }) as CanopyAnalysisResponse | null
 
-      if (!result?.cells) {
+      if (!result?.zones) {
         this.status = { count: 0, status: 'nominal' }
         return
       }
 
-      this.cells = result.cells
+      this.cells = result.zones
       this.dataSource.entities.removeAll()
 
-      for (const cell of result.cells) {
-        this.addCellEntity(cell)
+      for (const zone of result.zones) {
+        this.addZoneEntity(zone)
       }
 
-      this.status = { count: result.cells.length, status: 'nominal' }
+      this.status = { count: result.zones.length, status: 'nominal' }
     } catch (err) {
       this.status = { ...this.status, status: 'error', error: String(err) }
       console.warn('[canopy] analysis failed:', err)
     }
   }
 
-  private addCellEntity(cell: CanopyCell): void {
-    if (!this.dataSource || cell.polygon.length < 3) return
+  private addZoneEntity(zone: CanopyZone): void {
+    if (!this.dataSource || zone.coords.length < 3) return
 
-    const positions = cell.polygon.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat))
+    const positions = zone.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
 
-    // NDVI color ramp: -1 (blue) → 0 (brown) → 0.5 (yellow) → 1 (dark green)
-    // Height color ramp: 0m (dark) → 50m+ (bright green)
-    const color = this.showHeight
-      ? this.heightColor(cell.canopyHeight)
-      : this.ndviColor(cell.ndvi)
+    // Color by NDVI: healthy forest = green, defoliation/clearing = red/orange
+    const color = this.ndviColor(zone.avgNdvi)
 
     this.dataSource.entities.add({
-      id: `canopy:${cell.id}`,
+      id: `canopy:${zone.id}`,
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(positions),
         material: new Cesium.ColorMaterialProperty(color.withAlpha(0.5)),
-        outline: true,
-        outlineColor: new Cesium.ConstantProperty(color.withAlpha(0.9)),
-        outlineWidth: new Cesium.ConstantProperty(0.5),
       },
       properties: {
-        ndvi: cell.ndvi,
-        biome: cell.biome,
-        canopyHeight: cell.canopyHeight,
-        groundHeight: cell.groundHeight,
+        type: zone.type,
+        avgNdvi: zone.avgNdvi,
+        severity: zone.severity,
       },
     } as any)
   }
@@ -167,17 +168,6 @@ export class CanopyPlugin implements EarthEnginePlugin {
       Math.round(139 + (20 - 139) * t),
       Math.round(90 + (120 - 90) * t),
       Math.round(43 + (40 - 43) * t),
-      255,
-    )
-  }
-
-  private heightColor(height: number): Cesium.Color {
-    // 0m → dark, 50m+ → bright green
-    const t = Math.max(0, Math.min(1, height / 50))
-    return Cesium.Color.fromBytes(
-      Math.round(20 + (40 - 20) * t),
-      Math.round(40 + (180 - 40) * t),
-      Math.round(20 + (60 - 20) * t),
       255,
     )
   }

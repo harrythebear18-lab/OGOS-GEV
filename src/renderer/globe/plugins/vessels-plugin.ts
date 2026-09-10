@@ -7,7 +7,7 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 import type { LiveFeature, LiveUpdate } from '@shared/types'
 
 interface VesselFeature {
@@ -45,6 +45,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
+  private show = true
   private knownMmsi = new Set<string>()
   private unsubscribe: (() => void) | null = null
   private pollTimer: ReturnType<typeof setInterval> | null = null
@@ -96,6 +97,21 @@ export class VesselsPlugin implements EarthEnginePlugin {
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'toggle', id: 'visible', label: 'Visible', value: this.show },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'count', label: 'Vessels', value: String(this.status.count), color: this.status.count > 0 ? '#4aff8a' : '#6b7d92' },
+    ]
+  }
+
+  onControl(id: string, value?: unknown): void {
+    if (id === 'visible' && typeof value === 'boolean') {
+      this.show = value
+      if (this.dataSource) this.dataSource.show = value
+    }
   }
 
   private startPolling(): void {
@@ -159,7 +175,6 @@ export class VesselsPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.5)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       label: f.name ? {
         text: f.name.trim().slice(0, 12),
@@ -169,7 +184,6 @@ export class VesselsPlugin implements EarthEnginePlugin {
         outlineWidth: new Cesium.ConstantProperty(2),
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         pixelOffset: new Cesium.Cartesian2(0, -14),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       } : undefined,
       properties: {
         speed: f.speed,

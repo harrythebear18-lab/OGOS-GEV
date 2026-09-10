@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
+import * as fs from 'fs'
 import { IPC } from '@shared/ipc'
 import { TileCache } from './services/tile-cache'
 import { getSceneContext, updateSceneContext } from './services/scene-context'
@@ -13,16 +14,37 @@ import { findRestPoints } from './services/rest-service'
 import { planRoute } from './services/route-service'
 import { analyzeFallRisk } from './services/fall-risk-service'
 import { analyzeRunoff } from './services/runoff-service'
+import { analyzeRemainsCorridor } from './services/remains-corridor-service'
 import { analyzeCanopy } from './services/canopy-service'
 import { runBehaviorEngine } from './services/behavior-engine'
 import { fetchWaterFeatures } from './services/water-service'
-import { fetchRadarData, fetchWeather } from './services/weather-service'
+import { fetchRoads } from './services/road-service'
+import { fetchRadarData, fetchWeather, fetchRainfallForBbox } from './services/weather-service'
 import { checkClipHealth, embedText, embedImage, similarity } from './services/clip-service'
 import { webSearch } from './services/web-search-service'
+import { toGeoJSON, toKML } from './services/export-service'
+import { parseKmlFile } from './services/import-service'
+import { CASE_PROFILES, getCaseProfile } from './services/case-profiles'
+import { deriveTripParams, computeSearchRadii, DEFAULT_TRIP_PARAMS } from './services/trip-params'
+import { calibrateHiker, maxReachRadius, beyondLkpSearchCone } from './services/hiker-profile'
+import { ensureBathymetryGrid, getOceanDepth } from './services/climate/bathymetry-cache'
+import { classifyRegion } from './services/climate/region-classification'
 import { getAircraftFeatures } from './services/live/aircraft'
 import { getFireFeatures } from './services/live/fires'
 import { getVesselFeatures } from './services/live/vessels'
 import { getLightningFeatures } from './services/live/lightning'
+import { climateMonitor } from './services/climate/climate-monitor'
+import { predictionEngine } from './services/prediction/prediction-engine'
+import { gridMonitor } from './services/grid/grid-monitor'
+import { networkMonitor } from './services/network/network-monitor'
+import { VPNDetector } from './services/network/vpn-detector'
+import { GeoIPService } from './services/network/geoip'
+import { SpeedTestService } from './services/network/speed-test'
+import { DNSTestService } from './services/network/dns-test'
+import { stormsToWeatherEvents, lightningToWeatherEvents } from './services/grid/weather-grid-influence'
+import { generateSeismicGridAlerts } from './services/grid/seismic-grid-influence'
+import { generateSpaceWeatherGridAlerts } from './services/grid/space-weather-grid-influence'
+import { generateWeatherAircraftAlerts } from './services/grid/weather-aircraft-influence'
 
 export function registerIpcHandlers(): void {
   console.log('[ipc] registering IPC handlers...')
@@ -98,6 +120,10 @@ export function registerIpcHandlers(): void {
     return analyzeFallRisk(req)
   })
 
+  ipcMain.handle(IPC.REMAINS_CORRIDOR, async (_event, req) => {
+    return analyzeRemainsCorridor(req)
+  })
+
   ipcMain.handle(IPC.RUNOFF_ANALYSIS, async (_event, req) => {
     return analyzeRunoff(req)
   })
@@ -112,6 +138,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.WATER_FETCH, async (_event, req) => {
     return fetchWaterFeatures(req.bounds)
+  })
+
+  ipcMain.handle(IPC.ROAD_FETCH, async (_event, req) => {
+    return fetchRoads(req.bounds)
   })
 
   /* ── Satellite imagery (GIBS) ── */
@@ -130,6 +160,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.WEATHER_FORECAST, async (_event, point) => {
     return fetchWeather(point)
+  })
+
+  ipcMain.handle(IPC.WEATHER_RAINFALL, async (_event, req) => {
+    return fetchRainfallForBbox(req.bounds)
   })
 
   /* ── AI ── */
@@ -209,6 +243,90 @@ export function registerIpcHandlers(): void {
     return webSearch(args, location)
   })
 
+  /* ── Export / Import ── */
+  ipcMain.handle(IPC.EXPORT_GEOJSON, async (_event, data) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+      title: 'Export GeoJSON',
+      defaultPath: 'analysis.geojson',
+      filters: [{ name: 'GeoJSON', extensions: ['geojson', 'json'] }],
+    })
+    if (canceled || !filePath) return null
+    const geojson = toGeoJSON(data || {})
+    fs.writeFileSync(filePath, geojson, 'utf8')
+    return { path: filePath }
+  })
+
+  ipcMain.handle(IPC.EXPORT_KML, async (_event, data) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+      title: 'Export KML',
+      defaultPath: 'analysis.kml',
+      filters: [{ name: 'KML', extensions: ['kml'] }],
+    })
+    if (canceled || !filePath) return null
+    const kml = toKML(data || {})
+    fs.writeFileSync(filePath, kml, 'utf8')
+    return { path: filePath }
+  })
+
+  ipcMain.handle(IPC.IMPORT_KML, async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
+      title: 'Import KML / KMZ',
+      filters: [
+        { name: 'KML/KMZ', extensions: ['kml', 'kmz'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (canceled || filePaths.length === 0) return null
+    return parseKmlFile(filePaths[0])
+  })
+
+  /* ── Case profiles ── */
+  ipcMain.handle(IPC.CASE_PROFILES, async (_event, args) => {
+    if (args?.id) {
+      return { profile: getCaseProfile(args.id) }
+    }
+    return { profiles: CASE_PROFILES }
+  })
+
+  /* ── Trip params + Hiker calibration ── */
+  ipcMain.handle(IPC.TRIP_DERIVE, async (_event, args) => {
+    const params = args?.params ?? DEFAULT_TRIP_PARAMS
+    const derived = deriveTripParams(params)
+    const radii = computeSearchRadii(params)
+    return { derived, radii }
+  })
+
+  ipcMain.handle(IPC.HIKER_CALIBRATE, async (_event, args) => {
+    const profile = args?.profile
+    if (!profile) return null
+    const derived = deriveTripParams(profile.tripParams)
+    const model = calibrateHiker(profile, derived.walkSpeedMps, derived.impassableSlopeDeg)
+    const reachRadius = maxReachRadius(model, profile.tripParams.hoursSinceLastSeen)
+    const beyondLkpCone = beyondLkpSearchCone(model)
+    return { model, reachRadius, beyondLkpCone }
+  })
+
+  /* ── Climate helpers (bathymetry + region classification) ── */
+  ipcMain.handle(IPC.BATHYMETRY_DEPTH, async (_event, args) => {
+    await ensureBathymetryGrid()
+    const lat = args?.lat
+    const lon = args?.lon
+    if (typeof lat !== 'number' || typeof lon !== 'number') return null
+    const depth = getOceanDepth(lat, lon)
+    return depth === undefined ? null : { depthM: depth }
+  })
+
+  ipcMain.handle(IPC.REGION_CLASSIFY, async (_event, args) => {
+    const lat = args?.lat
+    const lon = args?.lon
+    const stationType = args?.stationType
+    if (typeof lat !== 'number' || typeof lon !== 'number') return null
+    return classifyRegion(lat, lon, stationType)
+  })
+
   /* ── Live feeds (pull-based fallback for plugins) ── */
   ipcMain.handle('live:aircraft', async () => {
     return getAircraftFeatures()
@@ -222,6 +340,124 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('live:lightning', async () => {
     return getLightningFeatures()
   })
+
+  /* ── Climate / Ocean ── */
+  ipcMain.on(IPC.CLIMATE_SET_VIEWPORT, (_event, bounds) => {
+    climateMonitor.setViewportBounds(bounds)
+  })
+  ipcMain.handle(IPC.CLIMATE_WHITELIST, (_event, stationId: string) => {
+    climateMonitor.whitelistStation?.(stationId)
+  })
+  ipcMain.handle(IPC.CLIMATE_UNWHITELIST, (_event, stationId: string) => {
+    climateMonitor.unwhitelistStation?.(stationId)
+  })
+
+  /* ── Grid ── */
+  ipcMain.handle(IPC.GRID_WHITELIST, (_event, assetId: string) => {
+    gridMonitor.whitelistAsset(assetId)
+  })
+  ipcMain.handle(IPC.GRID_UNWHITELIST, (_event, assetId: string) => {
+    gridMonitor.unwhitelistAsset(assetId)
+  })
+  ipcMain.handle(IPC.GRID_GET_WHITELIST, () => {
+    return gridMonitor.getWhitelist()
+  })
+  ipcMain.handle(IPC.GRID_SET_CROSS_DOMAIN, (_event, enabled: boolean) => {
+    gridMonitor.setCrossDomainEnabled(enabled)
+  })
+  ipcMain.handle(IPC.GRID_GET_CROSS_DOMAIN, () => {
+    return gridMonitor.isCrossDomainEnabled()
+  })
+
+  /* ── Network ── */
+  const geoIP = new GeoIPService()
+  const vpnDetector = new VPNDetector(geoIP)
+  const speedTestService = new SpeedTestService()
+  speedTestService.setOnProgress((progress: number) => {
+    broadcastToWindows(IPC.SPEEDTEST_PROGRESS, progress)
+  })
+  const dnsTestService = new DNSTestService()
+
+  ipcMain.handle(IPC.NET_VPN_REFRESH, async () => {
+    try {
+      const status = await vpnDetector.detect()
+      broadcastToWindows(IPC.NET_VPN, status)
+      return status
+    } catch (e) {
+      console.error('[ipc] VPN detection error:', e)
+      return null
+    }
+  })
+
+  ipcMain.handle(IPC.NET_GEOIP_LOOKUP, async (_event, ip: string) => {
+    return geoIP.lookup(ip)
+  })
+
+  ipcMain.handle(IPC.NET_SPEEDTEST_RUN, async () => {
+    return speedTestService.runSpeedTest()
+  })
+
+  ipcMain.handle(IPC.NET_DNSTEST_RUN, async () => {
+    return dnsTestService.testAllServers()
+  })
+
+  /* ── Cross-domain influence (climate → grid, every 60s) ── */
+  const crossDomainTimer = setInterval(() => {
+    if (!gridMonitor.isCrossDomainEnabled()) return
+    try {
+      const storms = climateMonitor.getStorms()
+      const lightning = climateMonitor.getLightning()
+      const lightningInput = lightning.map((f) => ({
+        lat: f.position.lat,
+        lon: f.position.lon,
+        timestamp: f.freshness,
+      }))
+      const events = [
+        ...stormsToWeatherEvents(storms),
+        ...lightningToWeatherEvents(lightningInput),
+      ]
+      if (events.length > 0) {
+        gridMonitor.setWeatherEvents(events)
+      }
+
+      const earthquakes = climateMonitor.getEarthquakes() as any[]
+      if (earthquakes.length > 0) {
+        const eqInput = earthquakes.map((e) => ({
+          id: e.id,
+          mag: e.mag,
+          lat: e.lat,
+          lon: e.lon,
+          tsunami: e.tsunami,
+        }))
+        const alerts = generateSeismicGridAlerts(eqInput, gridMonitor.getAssets() as any[])
+        for (const alert of alerts) gridMonitor.emit('alert', alert)
+      }
+
+      const spaceWx = climateMonitor.getSpaceWeather()
+      if (spaceWx) {
+        const alerts = generateSpaceWeatherGridAlerts(spaceWx, gridMonitor.getAssets() as any[])
+        for (const alert of alerts) gridMonitor.emit('alert', alert)
+      }
+
+      const aircraft = climateMonitor.getAircraft()
+      if (events.length > 0 && aircraft.length > 0) {
+        const aircraftInput = aircraft.map((f) => ({
+          icao24: (f.meta.icao24 as string) || f.id,
+          callsign: (f.meta.callsign as string) || f.id,
+          lat: f.position.lat,
+          lon: f.position.lon,
+          altitudeFt: f.position.height ? f.position.height * 3.281 : undefined,
+          onGround: f.meta.onGround as boolean | undefined,
+        }))
+        const aircraftAlerts = generateWeatherAircraftAlerts(events, aircraftInput)
+        if (aircraftAlerts.length > 0) {
+          broadcastToWindows(IPC.AIRCRAFT_WEATHER_ALERTS, aircraftAlerts)
+        }
+      }
+    } catch (e) {
+      console.error('[ipc] cross-domain error:', e)
+    }
+  }, 60_000)
 
   console.log('[ipc] all IPC handlers registered')
 }

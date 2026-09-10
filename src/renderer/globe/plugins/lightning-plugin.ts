@@ -7,7 +7,7 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 import type { LiveFeature, LiveUpdate } from '@shared/types'
 
 interface LightningStrike {
@@ -44,6 +44,7 @@ export class LightningPlugin implements EarthEnginePlugin {
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
+  private show = true
   private strikes = new Map<string, LightningStrike>()
   private unsubscribe: (() => void) | null = null
   private pollTimer: ReturnType<typeof setInterval> | null = null
@@ -103,6 +104,21 @@ export class LightningPlugin implements EarthEnginePlugin {
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'toggle', id: 'visible', label: 'Visible', value: this.show },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'count', label: 'Strikes', value: String(this.status.count), color: this.status.count > 0 ? '#4aff8a' : '#6b7d92' },
+    ]
+  }
+
+  onControl(id: string, value?: unknown): void {
+    if (id === 'visible' && typeof value === 'boolean') {
+      this.show = value
+      if (this.dataSource) this.dataSource.show = value
+    }
   }
 
   private startPolling(): void {
@@ -170,7 +186,6 @@ export class LightningPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.8)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       properties: {
         time: s.time,

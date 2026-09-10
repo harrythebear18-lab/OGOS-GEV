@@ -3,6 +3,10 @@ import { join } from 'path'
 import { registerIpcHandlers } from './ipc-handlers'
 import { registerWindow } from './windows'
 import { liveData } from './services/live/live-data'
+import { climateMonitor } from './services/climate/climate-monitor'
+import { predictionEngine } from './services/prediction/prediction-engine'
+import { gridMonitor } from './services/grid/grid-monitor'
+import { networkMonitor } from './services/network/network-monitor'
 import { vrManager } from './services/vr/vr-manager'
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
@@ -111,14 +115,35 @@ app.whenReady().then(() => {
   liveData.start()
   console.log('[main] live data started')
 
+  console.log('[main] starting climate monitor...')
+  climateMonitor.start()
+  console.log('[main] climate monitor started')
+
+  console.log('[main] starting prediction engine...')
+  climateMonitor.setPredictionEngine?.(predictionEngine)
+  predictionEngine.start()
+  console.log('[main] prediction engine started')
+
+  console.log('[main] starting grid monitor...')
+  gridMonitor.start()
+  console.log('[main] grid monitor started')
+
+  console.log('[main] starting network monitor...')
+  networkMonitor.start()
+  console.log('[main] network monitor started')
+
   console.log('[main] initializing VR manager...')
   vrManager.init()
   console.log('[main] VR manager initialized')
 })
 
 app.on('window-all-closed', () => {
-  console.log('[main] window-all-closed — stopping live data and quitting')
+  console.log('[main] window-all-closed — stopping services and quitting')
   liveData.stop()
+  climateMonitor.stop()
+  predictionEngine.stop()
+  gridMonitor.stop()
+  networkMonitor.stop()
   vrManager.shutdown()
   if (process.platform !== 'darwin') app.quit()
 })

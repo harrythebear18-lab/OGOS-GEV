@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, memo } from 'react'
-import type { EarthEnginePlugin, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginStats, PluginControlSpec } from './plugin-manager'
 
 interface PluginPanelProps {
   plugins: EarthEnginePlugin[]
@@ -23,12 +23,14 @@ interface CategoryMeta {
 }
 
 const CATEGORIES: CategoryMeta[] = [
-  { key: 'globe',    label: 'TIER 1 — WORLD INTELLIGENCE', color: '#4a9eff', icon: '🌍' },
-  { key: 'analysis', label: 'TIER 2 — MOVEMENT & BEHAVIOUR', color: '#4aff8a', icon: '🧭' },
-  { key: 'live',     label: 'TIER 3 — LIVE FEEDS',          color: '#ff8a4a', icon: '📡' },
-  { key: 'ai',       label: 'TIER 4 — AI & VISION',         color: '#a04aff', icon: '🧠' },
-  { key: 'export',   label: 'TIER 5 — MISSION LOGIC',       color: '#ffea4a', icon: '📋' },
-  { key: 'vr',       label: 'VR / OPENXR',                  color: '#ff4a8a', icon: '🥽' },
+  { key: 'globe',          label: 'TIER 1 — WORLD INTELLIGENCE',  color: '#4a9eff', icon: '🌍' },
+  { key: 'analysis',       label: 'TIER 2 — MOVEMENT & BEHAVIOUR', color: '#4aff8a', icon: '🧭' },
+  { key: 'live',           label: 'TIER 3 — LIVE FEEDS',           color: '#ff8a4a', icon: '📡' },
+  { key: 'climate',        label: 'TIER 3b — CLIMATE & OCEAN',     color: '#4affd4', icon: '🌊' },
+  { key: 'infrastructure', label: 'TIER 3c — INFRASTRUCTURE',      color: '#ffea4a', icon: '⚡' },
+  { key: 'ai',             label: 'TIER 4 — AI & VISION',          color: '#a04aff', icon: '🧠' },
+  { key: 'export',         label: 'TIER 5 — MISSION LOGIC',        color: '#ffd44a', icon: '📋' },
+  { key: 'vr',             label: 'VR / OPENXR',                   color: '#ff4a8a', icon: '🥽' },
 ]
 
 function statusColor(status: string): string {
@@ -61,21 +63,56 @@ function PluginCard({ plugin, active, onToggle }: {
   onToggle: () => void
 }) {
   const [stats, setStats] = useState<PluginStats | null>(null)
+  const [controls, setControls] = useState<PluginControlSpec[]>([])
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     if (!active) {
       setStats(null)
+      setControls([])
       return
     }
-    const fetchStats = () => setStats(plugin.getStats?.() ?? null)
+    const fetchStats = () => {
+      setStats(plugin.getStats?.() ?? null)
+      setControls(plugin.getControls?.() ?? [])
+    }
     fetchStats()
-    const interval = setInterval(fetchStats, 2000)
+    // Poll faster while loading, slower when nominal
+    const interval = setInterval(fetchStats, 150)
     return () => clearInterval(interval)
   }, [active, plugin])
 
   const color = statusColor(stats?.status ?? 'disabled')
   const label = statusLabel(stats?.status ?? 'disabled')
+  const isLoading = stats?.status === 'loading'
+
+  const handleControl = (spec: PluginControlSpec) => {
+    if (spec.type === 'button') {
+      plugin.onControl?.(spec.id)
+      // Immediately refresh stats after a button click
+      setTimeout(() => {
+        setStats(plugin.getStats?.() ?? null)
+        setControls(plugin.getControls?.() ?? [])
+      }, 50)
+    } else if (spec.type === 'slider') {
+      plugin.onControl?.(spec.id, spec.value)
+    } else if (spec.type === 'toggle') {
+      plugin.onControl?.(spec.id, !spec.value)
+      setTimeout(() => setControls(plugin.getControls?.() ?? []), 50)
+    } else if (spec.type === 'select') {
+      // Select handled via dropdown change event
+    }
+  }
+
+  const handleSliderChange = (spec: PluginControlSpec, value: number) => {
+    plugin.onControl?.(spec.id, value)
+    setTimeout(() => setControls(plugin.getControls?.() ?? []), 50)
+  }
+
+  const handleSelectChange = (spec: PluginControlSpec, value: string) => {
+    plugin.onControl?.(spec.id, value)
+    setTimeout(() => setControls(plugin.getControls?.() ?? []), 50)
+  }
 
   return (
     <div style={cardStyle.container(active)}>
@@ -110,6 +147,13 @@ function PluginCard({ plugin, active, onToggle }: {
         <span style={cardStyle.arrow}>{expanded ? '▾' : '▸'}</span>
       </div>
 
+      {/* Loading progress bar */}
+      {isLoading && (
+        <div style={cardStyle.progressTrack}>
+          <div style={cardStyle.progressBar} />
+        </div>
+      )}
+
       {/* Expanded details */}
       {expanded && active && (
         <div style={cardStyle.body}>
@@ -119,18 +163,80 @@ function PluginCard({ plugin, active, onToggle }: {
               <span style={cardStyle.errorText}>{stats.error}</span>
             </div>
           )}
-          <div style={cardStyle.detailRow}>
-            <span style={cardStyle.detailLabel}>ID</span>
-            <span style={cardStyle.detailValue}>{plugin.id}</span>
-          </div>
-          <div style={cardStyle.detailRow}>
-            <span style={cardStyle.detailLabel}>STATUS</span>
-            <span style={{ ...cardStyle.detailValue, color }}>{label}</span>
-          </div>
-          <div style={cardStyle.detailRow}>
-            <span style={cardStyle.detailLabel}>ENTITIES</span>
-            <span style={cardStyle.detailValue}>{stats?.count ?? 0}</span>
-          </div>
+
+          {/* Plugin controls */}
+          {controls.map((spec) => {
+            if (spec.type === 'separator') {
+              return <div key={spec.id} style={cardStyle.separator} />
+            }
+            if (spec.type === 'button') {
+              return (
+                <button
+                  key={spec.id}
+                  style={cardStyle.ctrlButton(spec.variant ?? 'default', spec.disabled)}
+                  disabled={spec.disabled}
+                  onClick={(e) => { e.stopPropagation(); handleControl(spec) }}
+                >
+                  {spec.label}
+                </button>
+              )
+            }
+            if (spec.type === 'slider') {
+              return (
+                <div key={spec.id} style={cardStyle.ctrlRow}>
+                  <span style={cardStyle.ctrlLabel}>{spec.label}</span>
+                  <input
+                    type="range"
+                    min={spec.min}
+                    max={spec.max}
+                    step={spec.step ?? 1}
+                    value={spec.value}
+                    onChange={(e) => handleSliderChange(spec, Number(e.target.value))}
+                    style={cardStyle.slider}
+                  />
+                  <span style={cardStyle.sliderValue}>{spec.value}{spec.unit ?? ''}</span>
+                </div>
+              )
+            }
+            if (spec.type === 'toggle') {
+              return (
+                <label key={spec.id} style={cardStyle.ctrlRow} onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={spec.value}
+                    onChange={() => handleControl(spec)}
+                    style={cardStyle.checkbox}
+                  />
+                  <span style={cardStyle.ctrlLabel}>{spec.label}</span>
+                </label>
+              )
+            }
+            if (spec.type === 'select') {
+              return (
+                <div key={spec.id} style={cardStyle.ctrlRow} onClick={(e) => e.stopPropagation()}>
+                  <span style={cardStyle.ctrlLabel}>{spec.label}</span>
+                  <select
+                    value={spec.value}
+                    onChange={(e) => handleSelectChange(spec, e.target.value)}
+                    style={cardStyle.select}
+                  >
+                    {spec.options.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )
+            }
+            if (spec.type === 'display') {
+              return (
+                <div key={spec.id} style={cardStyle.displayRow}>
+                  <span style={cardStyle.ctrlLabel}>{spec.label}</span>
+                  <span style={{ ...cardStyle.displayValue, color: spec.color ?? '#c0c8d0' }}>{spec.value}</span>
+                </div>
+              )
+            }
+            return null
+          })}
         </div>
       )}
 
@@ -254,7 +360,7 @@ const panelStyle = {
     gap: 6,
     width: '100%',
     padding: '6px 10px',
-    background: collapsed ? 'transparent' : `rgba(${color.slice(1, 3) === '4a' ? '74, 158, 255' : '0,0,0'}, 0.05)`,
+    background: collapsed ? 'transparent' : `${color}0d`,
     color: color,
     border: 'none',
     fontSize: 9,
@@ -379,5 +485,104 @@ const cardStyle = {
     fontSize: 9,
     color: '#6b7d92',
     fontStyle: 'italic' as const,
+  },
+  progressTrack: {
+    height: 2,
+    background: 'rgba(255, 234, 74, 0.15)',
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    width: '40%',
+    background: 'linear-gradient(90deg, transparent, #ffea4a, transparent)',
+    animation: 'plugin-progress 1.2s ease-in-out infinite',
+  },
+  separator: {
+    height: 1,
+    background: 'rgba(74, 158, 255, 0.1)',
+    margin: '4px 0',
+  },
+  ctrlButton: (variant: string, disabled?: boolean) => ({
+    display: 'block',
+    width: '100%',
+    padding: '4px 8px',
+    margin: '3px 0',
+    fontSize: 9,
+    fontFamily: 'monospace' as const,
+    letterSpacing: 0.5,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.4 : 1,
+    border: variant === 'danger'
+      ? '1px solid rgba(255, 74, 74, 0.4)'
+      : variant === 'primary'
+        ? '1px solid rgba(74, 255, 138, 0.4)'
+        : '1px solid rgba(107, 125, 146, 0.3)',
+    borderRadius: 2,
+    background: variant === 'danger'
+      ? 'rgba(255, 74, 74, 0.1)'
+      : variant === 'primary'
+        ? 'rgba(74, 255, 138, 0.1)'
+        : 'rgba(30, 42, 58, 0.5)',
+    color: variant === 'danger'
+      ? '#ff8a8a'
+      : variant === 'primary'
+        ? '#4aff8a'
+        : '#c0c8d0',
+  }),
+  ctrlRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '2px 0',
+  },
+  ctrlLabel: {
+    fontSize: 8,
+    color: '#6b7d92',
+    letterSpacing: 0.5,
+    flexShrink: 0,
+    minWidth: 50,
+  },
+  slider: {
+    flex: 1,
+    height: 12,
+    appearance: 'none' as const,
+    background: '#1e2a3a',
+    borderRadius: 6,
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  sliderValue: {
+    fontSize: 8,
+    color: '#4a9eff',
+    minWidth: 30,
+    textAlign: 'right' as const,
+  },
+  checkbox: {
+    width: 11,
+    height: 11,
+    cursor: 'pointer',
+    accentColor: '#4a9eff',
+  },
+  select: {
+    flex: 1,
+    fontSize: 8,
+    fontFamily: 'monospace' as const,
+    background: '#1e2a3a',
+    color: '#c0c8d0',
+    border: '1px solid #2a3a4a',
+    borderRadius: 2,
+    padding: '1px 4px',
+    cursor: 'pointer',
+  },
+  displayRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '2px 0',
+  },
+  displayValue: {
+    fontSize: 9,
+    fontFamily: 'monospace' as const,
+    fontWeight: 'bold' as const,
   },
 }

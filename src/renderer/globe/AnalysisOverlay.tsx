@@ -96,7 +96,6 @@ export default function AnalysisOverlay(props: AnalysisOverlayProps) {
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       })
     }

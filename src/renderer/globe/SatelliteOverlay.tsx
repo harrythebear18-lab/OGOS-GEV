@@ -85,7 +85,6 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
         color: Cesium.Color.fromBytes(255, 74, 74, 255),
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 2,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       label: {
         text: 'ISS',
@@ -95,7 +94,6 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
         outlineWidth: 2,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         pixelOffset: new Cesium.Cartesian2(0, -16),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     })
 

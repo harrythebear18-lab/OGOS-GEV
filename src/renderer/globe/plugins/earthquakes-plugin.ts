@@ -7,7 +7,7 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 
 const USGS_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson'
 const POLL_INTERVAL = 60_000
@@ -30,6 +30,7 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
   private pollTimer: ReturnType<typeof setInterval> | null = null
+  private show = true
   private knownIds = new Set<string>()
   private status: PluginStats = { count: 0, status: 'disabled' }
 
@@ -66,6 +67,21 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'toggle', id: 'visible', label: 'Visible', value: this.show },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'count', label: 'Count', value: String(this.status.count), color: this.status.count > 0 ? '#4aff8a' : '#6b7d92' },
+    ]
+  }
+
+  onControl(id: string, value?: unknown): void {
+    if (id === 'visible' && typeof value === 'boolean') {
+      this.show = value
+      if (this.dataSource) this.dataSource.show = value
+    }
   }
 
   private async poll(): Promise<void> {
@@ -132,7 +148,6 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.6)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       properties: {
         mag: f.mag,

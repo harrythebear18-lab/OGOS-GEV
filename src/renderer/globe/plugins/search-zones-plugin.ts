@@ -7,14 +7,8 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
-
-interface SearchZone {
-  id: string
-  polygon: number[][] // [lon, lat]
-  probability: number // 0-1
-  label: string
-}
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { SearchZonesResponse, SearchZone } from '@shared/types'
 
 export class SearchZonesPlugin implements EarthEnginePlugin {
   id = 'search-zones'
@@ -57,10 +51,38 @@ export class SearchZonesPlugin implements EarthEnginePlugin {
     this.status = { count: 0, status: 'disabled' }
   }
 
-  update(_ctx: PluginContext): void {}
+  update(ctx: PluginContext): void {
+    // Sync LKP from scene context (placed via DrawTools pin mode)
+    const sceneCtx = ctx.sceneContext as any
+    const ctxLkp = sceneCtx?.lkp
+    if (ctxLkp) {
+      const newLkp = { lon: ctxLkp.lng, lat: ctxLkp.lat }
+      if (!this.lkp || this.lkp.lon !== newLkp.lon || this.lkp.lat !== newLkp.lat) {
+        this.setLkp(newLkp.lon, newLkp.lat)
+      }
+    }
+  }
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'display', id: 'lkp', label: 'LKP', value: this.lkp ? `${this.lkp.lon.toFixed(4)}°, ${this.lkp.lat.toFixed(4)}°` : 'Not set — use 📌 pin tool', color: this.lkp ? '#ff4a4a' : '#6b7d92' },
+      { type: 'button', id: 'compute', label: 'Compute Zones', variant: 'primary', disabled: !this.lkp },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.zones.length === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'zones', label: 'Zones', value: String(this.zones.length), color: '#4a9eff' },
+    ]
+  }
+
+  onControl(id: string): void {
+    if (id === 'compute' && this.lkp) {
+      this.computeZones()
+    } else if (id === 'clear') {
+      this.clearAll()
+    }
   }
 
   getZones(): SearchZone[] {
@@ -105,7 +127,6 @@ export class SearchZonesPlugin implements EarthEnginePlugin {
         color: Cesium.Color.fromBytes(255, 74, 255, 255),
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 2,
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
       label: {
         text: 'LKP',
@@ -115,7 +136,6 @@ export class SearchZonesPlugin implements EarthEnginePlugin {
         outlineWidth: 2,
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         pixelOffset: new Cesium.Cartesian2(0, -20),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     } as any)
   }
@@ -126,8 +146,8 @@ export class SearchZonesPlugin implements EarthEnginePlugin {
 
     try {
       const result = await this.ipc.invoke('terrain:search:zones', {
-        lkp: [this.lkp.lon, this.lkp.lat],
-      }) as { zones: SearchZone[] } | null
+        lkp: { lng: this.lkp.lon, lat: this.lkp.lat },
+      }) as SearchZonesResponse | null
 
       if (!result?.zones) {
         this.status = { count: 0, status: 'nominal' }
@@ -154,9 +174,9 @@ export class SearchZonesPlugin implements EarthEnginePlugin {
   }
 
   private addZoneEntity(zone: SearchZone): void {
-    if (!this.dataSource || zone.polygon.length < 3) return
+    if (!this.dataSource || zone.coords.length < 3) return
 
-    const positions = zone.polygon.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat))
+    const positions = zone.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
 
     // Probability-based color: 1.0 = red (high), 0.5 = orange, 0.0 = blue (low)
     const t = Math.max(0, Math.min(1, zone.probability))
@@ -172,13 +192,10 @@ export class SearchZonesPlugin implements EarthEnginePlugin {
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(positions),
         material: new Cesium.ColorMaterialProperty(color.withAlpha(0.3)),
-        outline: true,
-        outlineColor: new Cesium.ConstantProperty(color.withAlpha(0.8)),
-        outlineWidth: new Cesium.ConstantProperty(1),
       },
       properties: {
         probability: zone.probability,
-        label: zone.label,
+        radius: zone.radius,
       },
     } as any)
   }

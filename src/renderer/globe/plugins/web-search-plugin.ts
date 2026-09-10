@@ -6,7 +6,7 @@
  * Results displayed in a side panel (not on globe — this is a context plugin).
  */
 
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 
 interface SearchResult {
   title: string
@@ -35,6 +35,7 @@ export class WebSearchPlugin implements EarthEnginePlugin {
   private status: PluginStats = { count: 0, status: 'disabled' }
   private results: SearchResult[] = []
   private alerts: NwsAlert[] = []
+  private query: string = ''
 
   async register(ctx: PluginContext): Promise<void> {
     this.ipc = ctx.ipc
@@ -52,6 +53,30 @@ export class WebSearchPlugin implements EarthEnginePlugin {
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'input', id: 'query', label: 'Search Query', value: this.query, placeholder: 'Search the web...' },
+      { type: 'button', id: 'search', label: 'Search', variant: 'primary' },
+      { type: 'button', id: 'alerts', label: 'Fetch NWS Alerts', variant: 'default' },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.results.length === 0 && this.alerts.length === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'results', label: 'Results', value: String(this.results.length), color: '#a04aff' },
+      { type: 'display', id: 'alertsCount', label: 'NWS Alerts', value: String(this.alerts.length), color: '#ff8a4a' },
+    ]
+  }
+
+  async onControl(id: string, value?: unknown): Promise<void> {
+    if (id === 'query' && typeof value === 'string') {
+      this.query = value
+    } else if (id === 'search' && this.query) {
+      await this.search(this.query)
+    } else if (id === 'alerts') {
+      await this.fetchAlerts()
+    } else if (id === 'clear') {
+      this.clearResults()
+    }
   }
 
   getResults(): SearchResult[] {

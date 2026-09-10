@@ -6,12 +6,15 @@
  */
 
 import { useState, useEffect, memo } from 'react'
+import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginStats } from './plugins'
 
 interface StatusBarProps {
   plugins: EarthEnginePlugin[]
   activePlugins: Set<string>
   viewport: unknown
+  hillshade?: boolean
+  viewer?: Cesium.Viewer | null
 }
 
 interface HealthSummary {
@@ -19,33 +22,36 @@ interface HealthSummary {
   loading: number
   error: number
   stale: number
+  degraded: number
   total: number
 }
 
-function StatusBar({ plugins, activePlugins, viewport }: StatusBarProps) {
-  const [health, setHealth] = useState<HealthSummary>({ nominal: 0, loading: 0, error: 0, stale: 0, total: 0 })
+function StatusBar({ plugins, activePlugins, viewport, hillshade, viewer }: StatusBarProps) {
+  const [health, setHealth] = useState<HealthSummary>({ nominal: 0, loading: 0, error: 0, stale: 0, degraded: 0, total: 0 })
   const [fps, setFps] = useState(0)
+  const [simTime, setSimTime] = useState<string>('')
 
   // Poll plugin health
   useEffect(() => {
     const poll = () => {
-      let nominal = 0, loading = 0, error = 0, stale = 0
+      let nominal = 0, loading = 0, error = 0, stale = 0, degraded = 0
       for (const id of activePlugins) {
         const plugin = plugins.find((p) => p.id === id)
         if (!plugin) continue
         const stats = plugin.getStats?.()
         if (!stats) continue
         switch (stats.status) {
-          case 'nominal': nominal++; break
-          case 'loading': loading++; break
-          case 'error':   error++; break
-          case 'stale':   stale++; break
+          case 'nominal':  nominal++; break
+          case 'loading':  loading++; break
+          case 'error':    error++; break
+          case 'stale':    stale++; break
+          case 'degraded': degraded++; break
         }
       }
-      setHealth({ nominal, loading, error, stale, total: activePlugins.size })
+      setHealth({ nominal, loading, error, stale, degraded, total: activePlugins.size })
     }
     poll()
-    const interval = setInterval(poll, 2000)
+    const interval = setInterval(poll, 200)
     return () => clearInterval(interval)
   }, [plugins, activePlugins])
 
@@ -69,6 +75,25 @@ function StatusBar({ plugins, activePlugins, viewport }: StatusBarProps) {
     return () => cancelAnimationFrame(raf)
   }, [])
 
+  // Simulated time-of-day display (when hillshade is orbiting)
+  useEffect(() => {
+    if (!hillshade || !viewer) {
+      setSimTime('')
+      return
+    }
+    const update = () => {
+      try {
+        const date = Cesium.JulianDate.toDate(viewer.clock.currentTime)
+        const h = date.getHours().toString().padStart(2, '0')
+        const m = date.getMinutes().toString().padStart(2, '0')
+        setSimTime(`${h}:${m}`)
+      } catch { /* ignore */ }
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [hillshade, viewer])
+
   const vp = viewport as {
     center?: { lng: number; lat: number }
     height?: number
@@ -81,6 +106,7 @@ function StatusBar({ plugins, activePlugins, viewport }: StatusBarProps) {
 
   const healthColor = health.error > 0 ? '#ff4a4a'
     : health.stale > 0 ? '#ff8a4a'
+    : health.degraded > 0 ? '#ff8a4a'
     : health.loading > 0 ? '#ffea4a'
     : health.nominal > 0 ? '#4aff8a'
     : '#6b7d92'
@@ -94,6 +120,7 @@ function StatusBar({ plugins, activePlugins, viewport }: StatusBarProps) {
         <span style={{ ...barStyle.value, color: healthColor }}>
           {health.error > 0 ? `${health.error} ERR` :
            health.stale > 0 ? `${health.stale} STALE` :
+           health.degraded > 0 ? `${health.degraded} DEGR` :
            health.loading > 0 ? `${health.loading} LOAD` :
            health.nominal > 0 ? 'NOMINAL' : 'IDLE'}
         </span>
@@ -129,6 +156,24 @@ function StatusBar({ plugins, activePlugins, viewport }: StatusBarProps) {
           <span style={barStyle.miniDot('#ff4a4a')} />
           <span style={{ ...barStyle.value, color: '#ff4a4a' }}>{health.error}</span>
         </div>
+      )}
+      {(health.stale > 0 || health.degraded > 0) && (
+        <div style={barStyle.group}>
+          <span style={barStyle.miniDot('#ff8a4a')} />
+          <span style={{ ...barStyle.value, color: '#ff8a4a' }}>{health.stale + health.degraded}</span>
+        </div>
+      )}
+
+      {/* Simulated time-of-day (when hillshade orbit is active) */}
+      {simTime && (
+        <>
+          <span style={barStyle.sep} />
+          <div style={barStyle.group}>
+            <span style={barStyle.sunIcon}>☀</span>
+            <span style={barStyle.label}>TOD</span>
+            <span style={{ ...barStyle.value, color: '#ffea4a' }}>{simTime}</span>
+          </div>
+        </>
       )}
 
       {/* Center spacer */}
@@ -211,4 +256,9 @@ const barStyle = {
     borderRadius: '50%',
     background: color,
   }),
+  sunIcon: {
+    fontSize: 11,
+    color: '#ffea4a',
+    textShadow: '0 0 4px rgba(255, 234, 74, 0.5)',
+  },
 }

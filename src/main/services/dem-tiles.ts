@@ -8,7 +8,7 @@
 
 import { join, dirname } from 'path'
 import { homedir } from 'os'
-import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 
 const CACHE_DIR = join(homedir(), '.osint-sentinel-workstation', 'cache', 'dem')
 
@@ -51,10 +51,7 @@ async function fetchTilePng(z: number, x: number, y: number): Promise<Buffer | n
     const buf = Buffer.from(await res.arrayBuffer())
 
     mkdirSync(dirname(local), { recursive: true })
-    const ws = createWriteStream(local)
-    ws.write(buf)
-    ws.end()
-    await new Promise<void>((resolve) => ws.on('finish', () => resolve()))
+    writeFileSync(local, buf)
 
     return buf
   } catch (e) {

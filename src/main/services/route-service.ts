@@ -8,6 +8,7 @@ import type { LngLat, RoutePlanRequest, RoutePlanResponse } from '@shared/types'
 import { loadTile } from './dem-service'
 import { lngLatToTile } from './dem-tiles'
 import { computeOptimalZoom } from './dem-zoom'
+import { fetchRoads, rasterizeRoads } from './road-service'
 
 const DEM_ZOOM = 12
 
@@ -72,6 +73,19 @@ export async function planRoute(req: RoutePlanRequest): Promise<RoutePlanRespons
 
   const { grid, width, height, swLng, neLat, lngStep, latStep } = await loadDemGrid(bounds, DEM_ZOOM)
 
+  // Fetch OSM roads and rasterize onto the grid for road-aware routing.
+  // Roads get a cost multiplier < 1.0, making A* prefer roads/trails.
+  let roadGrid: Float32Array | null = null
+  try {
+    const roadRes = await fetchRoads(bounds)
+    if (roadRes.segments.length > 0) {
+      roadGrid = rasterizeRoads(roadRes.segments, width, height, swLng, neLat, lngStep, latStep)
+    }
+  } catch (err) {
+    // Overpass may be unavailable — fall back to terrain-only routing
+    console.warn('[route] road fetch failed, using terrain-only:', err)
+  }
+
   const startX = Math.floor((start.lng - swLng) / lngStep)
   const startY = Math.floor((neLat - start.lat) / latStep)
   const endX = Math.floor((end.lng - swLng) / lngStep)
@@ -135,7 +149,16 @@ export async function planRoute(req: RoutePlanRequest): Promise<RoutePlanRespons
       const dElev = nextElev - currElev
       const slopeRad = Math.atan2(dElev, distM)
       const speed = Math.max(0.1, toblerSpeed(slopeRad))
-      const cost = distM / speed
+      let cost = distM / speed
+
+      // Apply road cost multiplier if a road passes through the target cell.
+      // Roads/trails are cheaper to walk on, so A* prefers them.
+      if (roadGrid) {
+        const roadCost = roadGrid[ny * width + nx]
+        if (roadCost < 1.0) {
+          cost *= roadCost
+        }
+      }
 
       const tentative = gScore[ci] + cost
       if (tentative < gScore[ni]) {

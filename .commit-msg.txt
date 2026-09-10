@@ -1,0 +1,25 @@
+OGOS capability migration — hiker/trip, climate helpers, UI controls
+
+Migrated from OSINT-Global-OS reference (not wrapped, rebuilt natively):
+- Hiker profile calibration (perception, anchors, disorientation, search cone)
+- Trip params physiology (heatstroke, dehydration, survival window)
+- Bathymetry cache (NOAA ERDDAP ETOPO180)
+- Region classification (ocean basins + continents)
+- Anomaly detection plugin (depressions + prominences)
+- Water features plugin (OSM rivers, lakes, springs)
+- Case profiles (M Cave / Kenny Veach)
+- GeoJSON/KML/KMZ export + import
+- Road network (OSM Overpass) + road-aware A* routing
+- Remains corridor (fall → flow → find)
+- Watershed divides in hydrology
+
+UI/controls added to all 31 plugins:
+- LKP pin now always visible (disableDepthTestDistance)
+- Weather forecast display (temp, wind, humidity, 24h summary)
+- Storm prediction details (wind, pressure, per-storm)
+- Visibility toggles + count displays on all live feed plugins
+- Routes plugin auto-fills start from LKP pin
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>

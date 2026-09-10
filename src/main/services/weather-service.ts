@@ -92,3 +92,34 @@ export function describeWeatherCode(code: number): string {
   }
   return codes[code] || 'Unknown'
 }
+
+/**
+ * Fetch recent + forecast rainfall for a bbox center from Open-Meteo.
+ * Returns total precipitation (mm) for the last 24h + next 24h.
+ */
+export async function fetchRainfallForBbox(bounds: [LngLat, LngLat]): Promise<number> {
+  const [sw, ne] = bounds
+  const centerLat = (sw.lat + ne.lat) / 2
+  const centerLng = (sw.lng + ne.lng) / 2
+
+  try {
+    const params = new URLSearchParams({
+      latitude: centerLat.toString(),
+      longitude: centerLng.toString(),
+      past_days: '1',
+      forecast_days: '1',
+      hourly: 'precipitation',
+      timezone: 'auto',
+    })
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return 0
+    const data = await res.json()
+    const precip: number[] = data.hourly?.precipitation ?? []
+    // Sum last 24h + next 24h precipitation
+    return precip.reduce((sum: number, p: number) => sum + (p || 0), 0)
+  } catch {
+    return 0
+  }
+}

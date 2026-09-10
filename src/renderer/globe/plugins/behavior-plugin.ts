@@ -2,34 +2,15 @@
  * Behavior Engine Plugin — Multi-agent terrain simulation.
  * Tier 2, Priority 7. UEBS2-style agents with A*, hazards, fatigue.
  *
- * Runs simulation in main process, streams agent positions to renderer.
- * Renders agents as Cesium billboards/points with trails.
+ * Calls the main process behavior engine (one-shot) which simulates
+ * likely movement paths of a missing person from an LKP, with downhill
+ * bias and terrain-aware random walk. Renders paths as polylines and
+ * density zones as heat polygons.
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
-
-interface Agent {
-  id: string
-  lon: number
-  lat: number
-  heading: number
-  speed: number
-  fatigue: number
-  state: 'moving' | 'resting' | 'searching' | 'halted'
-  trail: number[][] // [lon, lat] history
-}
-
-interface BehaviorConfig {
-  agentCount: number
-  startLon: number
-  startLat: number
-  targetLon: number
-  targetLat: number
-  perception: number
-  maxSpeed: number
-  fatigueRate: number
-}
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { BehaviorEngineResponse } from '@shared/types'
 
 export class BehaviorEnginePlugin implements EarthEnginePlugin {
   id = 'behavior-engine'
@@ -40,10 +21,9 @@ export class BehaviorEnginePlugin implements EarthEnginePlugin {
   private dataSource: Cesium.CustomDataSource | null = null
   private ipc: typeof window.api | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
-  private agents = new Map<string, Agent>()
-  private pollTimer: ReturnType<typeof setInterval> | null = null
-  private running = false
-  private config: BehaviorConfig | null = null
+  private lkp: { lon: number; lat: number } | null = null
+  private hours = 4
+  private hasResults = false
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
@@ -54,150 +34,139 @@ export class BehaviorEnginePlugin implements EarthEnginePlugin {
   }
 
   unregister(): void {
-    this.stop()
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
-    this.agents.clear()
+    this.lkp = null
+    this.hasResults = false
     this.viewer = null
     this.ipc = null
     this.status = { count: 0, status: 'disabled' }
   }
 
-  update(_ctx: PluginContext): void {
-    // Simulation runs on its own poll, not viewport-driven
+  update(ctx: PluginContext): void {
+    // Sync LKP from scene context (placed via DrawTools pin mode)
+    const sceneCtx = ctx.sceneContext as any
+    const ctxLkp = sceneCtx?.lkp
+    if (ctxLkp) {
+      const newLkp = { lon: ctxLkp.lng, lat: ctxLkp.lat }
+      if (!this.lkp || this.lkp.lon !== newLkp.lon || this.lkp.lat !== newLkp.lat) {
+        this.lkp = newLkp
+      }
+    }
   }
 
   getStats(): PluginStats {
     return this.status
   }
 
-  isRunning(): boolean {
-    return this.running
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'display', id: 'lkp', label: 'LKP', value: this.lkp ? `${this.lkp.lon.toFixed(4)}°, ${this.lkp.lat.toFixed(4)}°` : 'Not set — use 📌 pin tool', color: this.lkp ? '#ff4a4a' : '#6b7d92' },
+      { type: 'slider', id: 'hours', label: 'Hours', value: this.hours, min: 1, max: 24, step: 1 },
+      { type: 'button', id: 'run', label: 'Run Simulation', variant: 'primary', disabled: !this.lkp },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: !this.hasResults },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'state', label: 'State', value: this.hasResults ? 'RESULTS' : 'IDLE', color: this.hasResults ? '#4aff8a' : '#6b7d92' },
+    ]
   }
 
-  async start(config: BehaviorConfig): Promise<void> {
-    if (!this.ipc || this.running) return
-    this.config = config
-    this.running = true
-    this.status = { count: 0, status: 'loading' }
-
-    try {
-      await this.ipc.invoke('terrain:behavior:engine', {
-        action: 'start',
-        config,
-      })
-
-      // Poll for agent updates at 10Hz
-      this.pollTimer = setInterval(() => this.pollAgents(), 100)
-      this.status = { count: config.agentCount, status: 'nominal' }
-    } catch (err) {
-      this.running = false
-      this.status = { count: 0, status: 'error', error: String(err) }
-      console.warn('[behavior-engine] start failed:', err)
+  onControl(id: string, value?: unknown): void {
+    if (id === 'hours' && typeof value === 'number') {
+      this.hours = value
+    } else if (id === 'run' && this.lkp) {
+      this.runSimulation()
+    } else if (id === 'clear') {
+      this.clearAll()
     }
   }
 
-  stop(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer)
-      this.pollTimer = null
-    }
-    if (this.ipc && this.running) {
-      this.ipc.invoke('terrain:behavior:engine', { action: 'stop' }).catch(() => {})
-    }
-    this.running = false
+  setLkp(lon: number, lat: number): void {
+    this.lkp = { lon, lat }
+  }
+
+  clearAll(): void {
+    this.dataSource?.entities.removeAll()
+    this.hasResults = false
     this.status = { count: 0, status: 'nominal' }
   }
 
-  private async pollAgents(): Promise<void> {
-    if (!this.ipc || !this.dataSource || !this.running) return
+  private async runSimulation(): Promise<void> {
+    if (!this.ipc || !this.lkp || !this.dataSource) return
+    this.status = { ...this.status, status: 'loading' }
 
     try {
       const result = await this.ipc.invoke('terrain:behavior:engine', {
-        action: 'poll',
-      }) as { agents: Agent[] } | null
+        lkp: { lng: this.lkp.lon, lat: this.lkp.lat },
+        hours: this.hours,
+      }) as BehaviorEngineResponse | null
 
-      if (!result?.agents) return
-
-      // Delta update entities
-      for (const agent of result.agents) {
-        this.updateAgentEntity(agent)
+      if (!result?.paths) {
+        this.status = { count: 0, status: 'nominal' }
+        return
       }
 
-      this.status = { count: result.agents.length, status: 'nominal' }
+      this.dataSource.entities.removeAll()
+
+      // Render simulation paths as polylines
+      for (let i = 0; i < result.paths.length; i++) {
+        const path = result.paths[i]
+        if (path.length < 2) continue
+        this.addPathEntity(path, i)
+      }
+
+      // Render density zones as heat polygons
+      for (const zone of result.densityZones) {
+        this.addDensityEntity(zone)
+      }
+
+      this.hasResults = true
+      this.status = { count: result.paths.length, status: 'nominal' }
     } catch (err) {
-      this.status = { ...this.status, status: 'stale' }
-      console.warn('[behavior-engine] poll failed:', err)
+      this.status = { ...this.status, status: 'error', error: String(err) }
+      console.warn('[behavior-engine] simulation failed:', err)
     }
   }
 
-  private updateAgentEntity(agent: Agent): void {
+  private addPathEntity(path: { lng: number; lat: number }[], index: number): void {
     if (!this.dataSource) return
+    const positions = path.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
 
-    const existing = this.agents.get(agent.id)
-    const position = Cesium.Cartesian3.fromDegrees(agent.lon, agent.lat)
-
-    if (!existing) {
-      // New agent
-      this.agents.set(agent.id, agent)
-      this.dataSource.entities.add({
-        id: `agent:${agent.id}`,
-        position: new Cesium.ConstantPositionProperty(position),
-        point: {
-          pixelSize: 6,
-          color: this.agentColor(agent.state),
-          outlineColor: Cesium.Color.WHITE.withAlpha(0.6),
-          outlineWidth: 1,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        polyline: agent.trail.length > 1 ? {
-          positions: new Cesium.ConstantProperty(
-            agent.trail.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
-          ),
-          width: 1,
-          material: new Cesium.ColorMaterialProperty(this.agentColor(agent.state).withAlpha(0.4)),
-          clampToGround: true,
-        } : undefined,
-        properties: {
-          heading: agent.heading,
-          speed: agent.speed,
-          fatigue: agent.fatigue,
-          state: agent.state,
-        },
-      } as any)
-    } else {
-      // Update existing
-      this.agents.set(agent.id, agent)
-      const entity = this.dataSource.entities.getById(`agent:${agent.id}`)
-      if (entity) {
-        (entity.position as Cesium.ConstantPositionProperty).setValue(position)
-        // Update trail if present
-        if (agent.trail.length > 1 && entity.polyline) {
-          (entity.polyline.positions as Cesium.ConstantProperty).setValue(
-            agent.trail.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat)),
-          )
-        }
-        // Update properties
-        if (entity.properties) {
-          entity.properties.heading = agent.heading
-          entity.properties.speed = agent.speed
-          entity.properties.fatigue = agent.fatigue
-          entity.properties.state = agent.state
-        }
-      }
-    }
+    this.dataSource.entities.add({
+      id: `behavior-path:${index}`,
+      polyline: {
+        positions: new Cesium.ConstantProperty(positions),
+        width: new Cesium.ConstantProperty(2),
+        material: new Cesium.ColorMaterialProperty(
+          Cesium.Color.fromBytes(74, 158, 255, 180),
+        ),
+        clampToGround: true,
+      },
+    } as any)
   }
 
-  private agentColor(state: string): Cesium.Color {
-    switch (state) {
-      case 'moving': return Cesium.Color.fromBytes(74, 158, 255, 255)
-      case 'searching': return Cesium.Color.fromBytes(255, 234, 74, 255)
-      case 'resting': return Cesium.Color.fromBytes(138, 138, 138, 255)
-      case 'halted': return Cesium.Color.fromBytes(255, 74, 74, 255)
-      default: return Cesium.Color.WHITE
-    }
+  private addDensityEntity(zone: { id: string; coords: { lng: number; lat: number }[]; density: number }): void {
+    if (!this.dataSource || zone.coords.length < 3) return
+    const positions = zone.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
+
+    // Density heat: high density = red, low = blue
+    const t = Math.max(0, Math.min(1, zone.density))
+    const color = Cesium.Color.fromBytes(
+      Math.round(74 + (255 - 74) * t),
+      Math.round(158 - (158 - 74) * t),
+      Math.round(255 - (255 - 74) * t),
+      200,
+    )
+
+    this.dataSource.entities.add({
+      id: `behavior-density:${zone.id}`,
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(positions),
+        material: new Cesium.ColorMaterialProperty(color.withAlpha(0.4)),
+      },
+      properties: { density: zone.density },
+    } as any)
   }
 }
 

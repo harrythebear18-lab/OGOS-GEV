@@ -9,7 +9,8 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WeatherResponse } from '@shared/types'
 
 interface RadarData {
   host: string
@@ -33,6 +34,8 @@ export class WeatherPlugin implements EarthEnginePlugin {
   private showRadar = true
   private showSatellite = false
   private radarOpacity = 0.6
+  private forecast: WeatherResponse | null = null
+  private forecastPoint: { lng: number; lat: number } | null = null
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
@@ -67,12 +70,80 @@ export class WeatherPlugin implements EarthEnginePlugin {
     this.status = { count: 0, status: 'disabled' }
   }
 
-  update(_ctx: PluginContext): void {
-    // Could re-fetch weather for new viewport center
+  update(ctx: PluginContext): void {
+    // Auto-fetch forecast for the LKP or viewport center
+    const sceneCtx = ctx.sceneContext as any
+    const lkp = sceneCtx?.lkp
+    const center = sceneCtx?.camera?.center
+    const point = lkp ?? center
+    if (point && (!this.forecastPoint || Math.abs(point.lng - this.forecastPoint.lng) > 0.05 || Math.abs(point.lat - this.forecastPoint.lat) > 0.05)) {
+      this.forecastPoint = point
+      this.fetchForecast(point)
+    }
   }
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    const c = this.forecast?.current
+    const controls: PluginControlSpec[] = [
+      { type: 'toggle', id: 'radar', label: 'Radar Overlay', value: this.showRadar },
+      { type: 'toggle', id: 'satellite', label: 'Satellite IR', value: this.showSatellite },
+      { type: 'slider', id: 'opacity', label: 'Radar Opacity', min: 0, max: 1, step: 0.05, value: this.radarOpacity },
+      { type: 'separator', id: 'sep1' },
+    ]
+
+    if (c) {
+      controls.push(
+        { type: 'display', id: 'temp', label: 'Temp', value: `${c.temperature.toFixed(1)}°C`, color: c.temperature > 25 ? '#ff8a4a' : c.temperature < 5 ? '#4a8aff' : '#4aff8a' },
+        { type: 'display', id: 'feels', label: 'Feels Like', value: `${c.apparentTemp.toFixed(1)}°C`, color: '#ffd24a' },
+        { type: 'display', id: 'wind', label: 'Wind', value: `${c.windSpeed.toFixed(0)} km/h`, color: '#4affd4' },
+        { type: 'display', id: 'humidity', label: 'Humidity', value: `${c.humidity.toFixed(0)}%`, color: '#4a8aff' },
+        { type: 'display', id: 'precip', label: 'Precip', value: `${c.precipitation.toFixed(1)} mm`, color: c.precipitation > 0 ? '#4a8aff' : '#6b7d92' },
+      )
+      const h = this.forecast?.hourly ?? []
+      if (h.length > 0) {
+        const next24 = h.slice(0, 24)
+        const maxTemp = Math.max(...next24.map((x) => x.temp))
+        const minTemp = Math.min(...next24.map((x) => x.temp))
+        const totalPrecip = next24.reduce((s, x) => s + x.precip, 0)
+        const maxPrecipProb = Math.max(...next24.map((x) => x.precipProb))
+        controls.push(
+          { type: 'separator', id: 'sep2' },
+          { type: 'display', id: '24hmax', label: '24h Max', value: `${maxTemp.toFixed(1)}°C`, color: '#ff8a4a' },
+          { type: 'display', id: '24hmin', label: '24h Min', value: `${minTemp.toFixed(1)}°C`, color: '#4a8aff' },
+          { type: 'display', id: '24hprecip', label: '24h Rain', value: `${totalPrecip.toFixed(1)} mm`, color: '#4a8aff' },
+          { type: 'display', id: '24hprob', label: 'Rain Prob', value: `${maxPrecipProb}%`, color: maxPrecipProb > 50 ? '#ff8a4a' : '#6b7d92' },
+        )
+      }
+    } else {
+      controls.push({ type: 'display', id: 'noforecast', label: 'Forecast', value: 'Place LKP pin', color: '#6b7d92' })
+    }
+
+    return controls
+  }
+
+  onControl(id: string, value?: unknown): void {
+    if (id === 'radar' && typeof value === 'boolean') {
+      this.setRadarVisible(value)
+    } else if (id === 'satellite' && typeof value === 'boolean') {
+      this.setSatelliteVisible(value)
+    } else if (id === 'opacity' && typeof value === 'number') {
+      this.setRadarOpacity(value)
+    }
+  }
+
+  private async fetchForecast(point: { lng: number; lat: number }): Promise<void> {
+    try {
+      const result = await window.api.weather.forecast(point) as WeatherResponse | null
+      if (result) {
+        this.forecast = result
+      }
+    } catch (err) {
+      console.warn('[weather] forecast fetch failed:', err)
+    }
   }
 
   // ── Public API for UI panel ──

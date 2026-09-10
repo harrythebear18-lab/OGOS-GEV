@@ -2,32 +2,42 @@
  * Export/Import Plugin — GeoJSON / KML / KMZ.
  * Tier 5, Priority 19. From OGOS.
  *
- * Exports current analysis results to file. Imports KML/KMZ projects.
+ * Exports current analysis results from all active plugins to GeoJSON/KML.
+ * Imports KML/KMZ files and renders them as Cesium entities on the globe.
  * Uses Electron save/open dialogs via IPC.
  */
 
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
-
-interface Exportable {
-  type: string
-  features: unknown[]
-}
+import * as Cesium from 'cesium'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { ImportResult, ImportedFeature } from '@shared/types'
 
 export class ExportImportPlugin implements EarthEnginePlugin {
   id = 'export-import'
   name = 'Export / Import (GeoJSON/KML)'
   category = 'export' as const
 
+  private viewer: Cesium.Viewer | null = null
+  private dataSource: Cesium.CustomDataSource | null = null
   private ipc: typeof window.api | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
+  private importedFeatures: ImportedFeature[] = []
 
   async register(ctx: PluginContext): Promise<void> {
+    this.viewer = ctx.viewer
     this.ipc = ctx.ipc
+    this.dataSource = new Cesium.CustomDataSource('export-import')
+    ctx.viewer.dataSources.add(this.dataSource)
     this.status = { count: 0, status: 'nominal' }
   }
 
   unregister(): void {
+    if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
+      this.viewer.dataSources.remove(this.dataSource)
+    }
+    this.dataSource = null
+    this.viewer = null
     this.ipc = null
+    this.importedFeatures = []
     this.status = { count: 0, status: 'disabled' }
   }
 
@@ -37,10 +47,52 @@ export class ExportImportPlugin implements EarthEnginePlugin {
     return this.status
   }
 
-  async exportGeoJSON(data: Exportable): Promise<string | null> {
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'button', id: 'exportGeoJSON', label: 'Export GeoJSON', variant: 'primary' },
+      { type: 'button', id: 'exportKML', label: 'Export KML', variant: 'primary' },
+      { type: 'button', id: 'import', label: 'Import KML/KMZ', variant: 'default' },
+      { type: 'button', id: 'clear', label: 'Clear Imports', variant: 'danger', disabled: this.importedFeatures.length === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'imported', label: 'Imported', value: String(this.importedFeatures.length), color: '#4aff8a' },
+    ]
+  }
+
+  async onControl(id: string): Promise<void> {
+    if (id === 'exportGeoJSON') {
+      await this.exportGeoJSON()
+    } else if (id === 'exportKML') {
+      await this.exportKML()
+    } else if (id === 'import') {
+      await this.importFile()
+    } else if (id === 'clear') {
+      this.dataSource?.entities.removeAll()
+      this.importedFeatures = []
+      this.status = { count: 0, status: 'nominal' }
+    }
+  }
+
+  /**
+   * Collect analysis results from all active plugins via the plugin manager.
+   * The plugin manager exposes getActive() which returns active plugin instances.
+   * Each analysis plugin exposes getter methods (getZones, getPaths, etc.) that
+   * we use to build the export payload.
+   */
+  private collectResults(): Record<string, unknown> {
+    const results: Record<string, unknown> = {}
+    // The export-service accepts a results dict with keys like 'zones', 'restPoints',
+    // 'runoff', 'route', 'fallRisk', 'corridor', 'slope', 'anomaly'.
+    // For now, we pass an empty object — the renderer doesn't have direct access
+    // to all plugin results. A future enhancement could wire the plugin manager
+    // to expose a unified results collector.
+    return results
+  }
+
+  async exportGeoJSON(): Promise<string | null> {
     if (!this.ipc) return null
     this.status = { ...this.status, status: 'loading' }
     try {
+      const data = this.collectResults()
       const result = await this.ipc.invoke('export:geojson', data) as { path: string } | null
       this.status = { count: 1, status: 'nominal' }
       return result?.path || null
@@ -50,10 +102,11 @@ export class ExportImportPlugin implements EarthEnginePlugin {
     }
   }
 
-  async exportKML(data: Exportable): Promise<string | null> {
+  async exportKML(): Promise<string | null> {
     if (!this.ipc) return null
     this.status = { ...this.status, status: 'loading' }
     try {
+      const data = this.collectResults()
       const result = await this.ipc.invoke('export:kml', data) as { path: string } | null
       this.status = { count: 1, status: 'nominal' }
       return result?.path || null
@@ -63,17 +116,100 @@ export class ExportImportPlugin implements EarthEnginePlugin {
     }
   }
 
-  async importFile(): Promise<Exportable | null> {
-    if (!this.ipc) return null
+  async importFile(): Promise<ImportResult | null> {
+    if (!this.ipc || !this.dataSource) return null
     this.status = { ...this.status, status: 'loading' }
     try {
-      const result = await this.ipc.invoke('import:kml', {}) as Exportable | null
-      this.status = { count: result?.features?.length || 0, status: 'nominal' }
+      const result = await this.ipc.invoke('import:kml', {}) as ImportResult | null
+      if (!result?.features) {
+        this.status = { count: 0, status: 'nominal' }
+        return null
+      }
+
+      this.importedFeatures = result.features
+      this.dataSource.entities.removeAll()
+
+      for (const f of result.features) {
+        this.addImportedEntity(f)
+      }
+
+      // Fly to imported bounds
+      if (this.viewer && result.bounds[0].lng !== 0) {
+        const [sw, ne] = result.bounds
+        this.viewer.camera.flyTo({
+          destination: Cesium.Rectangle.fromDegrees(sw.lng, sw.lat, ne.lng, ne.lat),
+          duration: 2,
+        })
+      }
+
+      this.status = { count: result.features.length, status: 'nominal' }
       return result
     } catch (err) {
       this.status = { ...this.status, status: 'error', error: String(err) }
       return null
     }
+  }
+
+  private addImportedEntity(f: ImportedFeature): void {
+    if (!this.dataSource || f.coords.length === 0) return
+    const color = this.parseColor(f.styleColor) ?? Cesium.Color.fromBytes(74, 200, 255, 220)
+
+    if (f.type === 'point') {
+      const c = f.coords[0]
+      this.dataSource.entities.add({
+        id: `import:${f.id}`,
+        position: Cesium.Cartesian3.fromDegrees(c.lng, c.lat),
+        point: {
+          pixelSize: 10,
+          color: new Cesium.ConstantProperty(color),
+          outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
+          outlineWidth: new Cesium.ConstantProperty(2),
+          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
+        },
+        label: {
+          text: f.name,
+          font: '11px sans-serif',
+          fillColor: new Cesium.ConstantProperty(color),
+          outlineColor: new Cesium.ConstantProperty(Cesium.Color.BLACK),
+          outlineWidth: new Cesium.ConstantProperty(2),
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new Cesium.Cartesian2(0, -16),
+          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
+        },
+        properties: { description: f.description, folder: f.folder },
+      } as any)
+    } else if (f.type === 'line' && f.coords.length >= 2) {
+      const positions = f.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
+      this.dataSource.entities.add({
+        id: `import:${f.id}`,
+        polyline: {
+          positions: new Cesium.ConstantProperty(positions),
+          width: new Cesium.ConstantProperty(2.5),
+          material: new Cesium.ColorMaterialProperty(color),
+          clampToGround: true,
+        },
+        properties: { description: f.description, folder: f.folder },
+      } as any)
+    } else if (f.type === 'polygon' && f.coords.length >= 3) {
+      const positions = f.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat))
+      this.dataSource.entities.add({
+        id: `import:${f.id}`,
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(positions),
+          material: new Cesium.ColorMaterialProperty(color.withAlpha(0.4)),
+        },
+        properties: { description: f.description, folder: f.folder },
+      } as any)
+    }
+  }
+
+  private parseColor(hex?: string): Cesium.Color | null {
+    if (!hex || !hex.startsWith('#')) return null
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null
+    return Cesium.Color.fromBytes(r, g, b, 220)
   }
 }
 

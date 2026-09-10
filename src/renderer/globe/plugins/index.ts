@@ -7,7 +7,10 @@ import { pluginManager } from './plugin-manager'
 import { weatherPlugin } from './weather-plugin'
 import { earthquakesPlugin } from './earthquakes-plugin'
 import { slopeBandsPlugin } from './slope-plugin'
+import { anomalyPlugin } from './anomaly-plugin'
 import { hydrologyPlugin } from './hydrology-plugin'
+import { waterPlugin } from './water-plugin'
+import { roadsPlugin } from './roads-plugin'
 import { routesPlugin } from './routes-plugin'
 import { canopyPlugin } from './canopy-plugin'
 import { behaviorEnginePlugin } from './behavior-plugin'
@@ -21,9 +24,17 @@ import { webSearchPlugin } from './web-search-plugin'
 import { searchZonesPlugin } from './search-zones-plugin'
 import { restPointsPlugin } from './rest-points-plugin'
 import { fallRiskPlugin } from './fall-risk-plugin'
+import { remainsCorridorPlugin } from './remains-corridor-plugin'
 import { caseProfilesPlugin } from './case-profiles-plugin'
 import { exportImportPlugin } from './export-import-plugin'
+import { hikerProfilePlugin } from './hiker-profile-plugin'
 import { vrPlugin } from './vr-plugin'
+import { climateStationsPlugin } from './climate-stations-plugin'
+import { stormsPlugin } from './storms-plugin'
+import { spaceWeatherPlugin } from './space-weather-plugin'
+import { gridAssetsPlugin } from './grid-assets-plugin'
+import { networkPlugin } from './network-plugin'
+import { predictionsPlugin } from './predictions-plugin'
 
 // Register all plugins (doesn't activate them)
 pluginManager.register([
@@ -31,7 +42,10 @@ pluginManager.register([
   weatherPlugin,
   earthquakesPlugin,
   slopeBandsPlugin,
+  anomalyPlugin,
   hydrologyPlugin,
+  waterPlugin,
+  roadsPlugin,
   // Tier 2 — Movement & Behaviour
   routesPlugin,
   canopyPlugin,
@@ -41,16 +55,27 @@ pluginManager.register([
   aircraftPlugin,
   vesselsPlugin,
   lightningPlugin,
+  // Tier 3b — Climate / Ocean (ported from OGOS)
+  climateStationsPlugin,
+  stormsPlugin,
+  spaceWeatherPlugin,
+  // Tier 3c — Infrastructure (ported from OGOS)
+  gridAssetsPlugin,
+  networkPlugin,
   // Tier 4 — AI & Vision
   clipPlugin,
   visionPlugin,
   webSearchPlugin,
+  // Tier 4b — Predictions (ported from OGOS)
+  predictionsPlugin,
   // Tier 5 — Mission Logic
   searchZonesPlugin,
   restPointsPlugin,
   fallRiskPlugin,
+  remainsCorridorPlugin,
   caseProfilesPlugin,
   exportImportPlugin,
+  hikerProfilePlugin,
   // VR / OpenXR
   vrPlugin,
 ])
@@ -60,7 +85,10 @@ export {
   weatherPlugin,
   earthquakesPlugin,
   slopeBandsPlugin,
+  anomalyPlugin,
   hydrologyPlugin,
+  waterPlugin,
+  roadsPlugin,
   routesPlugin,
   canopyPlugin,
   behaviorEnginePlugin,
@@ -68,14 +96,22 @@ export {
   aircraftPlugin,
   vesselsPlugin,
   lightningPlugin,
+  climateStationsPlugin,
+  stormsPlugin,
+  spaceWeatherPlugin,
+  gridAssetsPlugin,
+  networkPlugin,
+  predictionsPlugin,
   clipPlugin,
   visionPlugin,
   webSearchPlugin,
   searchZonesPlugin,
   restPointsPlugin,
   fallRiskPlugin,
+  remainsCorridorPlugin,
   caseProfilesPlugin,
   exportImportPlugin,
+  hikerProfilePlugin,
   vrPlugin,
 }
-export type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+export type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'

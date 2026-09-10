@@ -7,7 +7,7 @@
  */
 
 import * as Cesium from 'cesium'
-import type { EarthEnginePlugin, PluginContext, PluginStats } from './plugin-manager'
+import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 
 interface RouteResult {
   id: string
@@ -62,12 +62,36 @@ export class RoutesPlugin implements EarthEnginePlugin {
     this.status = { count: 0, status: 'disabled' }
   }
 
-  update(_ctx: PluginContext): void {
-    // Routes are click-driven, not viewport-driven
+  update(ctx: PluginContext): void {
+    // If no start point set yet, use LKP as default start
+    if (!this.start) {
+      const sceneCtx = ctx.sceneContext as any
+      const lkp = sceneCtx?.lkp
+      if (lkp) {
+        this.start = { lon: lkp.lng, lat: lkp.lat }
+        this.updateMarkers()
+      }
+    }
   }
 
   getStats(): PluginStats {
     return this.status
+  }
+
+  getControls(): PluginControlSpec[] {
+    return [
+      { type: 'display', id: 'start', label: 'Start', value: this.start ? `${this.start.lon.toFixed(4)}°, ${this.start.lat.toFixed(4)}°` : 'Place LKP pin or click', color: this.start ? '#4aff8a' : '#6b7d92' },
+      { type: 'display', id: 'end', label: 'End', value: this.end ? `${this.end.lon.toFixed(4)}°, ${this.end.lat.toFixed(4)}°` : 'Click globe to set', color: this.end ? '#ff4a4a' : '#6b7d92' },
+      { type: 'button', id: 'clear', label: 'Clear Route', variant: 'danger', disabled: this.routes.size === 0 },
+      { type: 'separator', id: 'sep1' },
+      { type: 'display', id: 'routes', label: 'Routes', value: String(this.routes.size), color: '#4a9eff' },
+    ]
+  }
+
+  onControl(id: string): void {
+    if (id === 'clear') {
+      this.clearAll()
+    }
   }
 
   getStart(): { lon: number; lat: number } | null {
@@ -142,7 +166,6 @@ export class RoutesPlugin implements EarthEnginePlugin {
           color: Cesium.Color.fromBytes(74, 255, 138, 255),
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
           text: 'START',
@@ -152,7 +175,6 @@ export class RoutesPlugin implements EarthEnginePlugin {
           outlineWidth: 2,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new Cesium.Cartesian2(0, -18),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       } as any)
     }
@@ -166,7 +188,6 @@ export class RoutesPlugin implements EarthEnginePlugin {
           color: Cesium.Color.fromBytes(255, 74, 74, 255),
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
           text: 'END',
@@ -176,7 +197,6 @@ export class RoutesPlugin implements EarthEnginePlugin {
           outlineWidth: 2,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new Cesium.Cartesian2(0, -18),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       } as any)
     }
@@ -188,16 +208,24 @@ export class RoutesPlugin implements EarthEnginePlugin {
 
     try {
       const result = await this.ipc.invoke('terrain:route:plan', {
-        start: [this.start.lon, this.start.lat],
-        end: [this.end.lon, this.end.lat],
-      }) as { route: RouteResult } | null
+        start: { lng: this.start.lon, lat: this.start.lat },
+        end: { lng: this.end.lon, lat: this.end.lat },
+      }) as { primary: { lng: number; lat: number }[]; distanceM: number; ascentM: number; descentM: number } | null
 
-      if (!result?.route) {
+      if (!result?.primary || result.primary.length < 2) {
         this.status = { count: 0, status: 'error', error: 'No route returned' }
         return
       }
 
-      const route = result.route
+      const route: RouteResult = {
+        id: `route-${Date.now()}`,
+        coordinates: result.primary.map((p) => [p.lng, p.lat]),
+        distance: result.distanceM,
+        duration: result.distanceM / 1.1, // approx walking time
+        ascent: result.ascentM,
+        descent: result.descentM,
+        difficulty: result.ascentM > 500 ? 'extreme' : result.ascentM > 200 ? 'hard' : result.ascentM > 50 ? 'moderate' : 'easy',
+      }
       this.routes.set(route.id, route)
       this.addRouteEntity(route)
       this.status = { count: this.routes.size, status: 'nominal' }
