@@ -10,9 +10,11 @@ const OLLAMA_BASE = 'http://localhost:11434'
 
 const _totalMemMB = Math.round(os.totalmem() / (1024 * 1024))
 const _isMac = process.platform === 'darwin'
-const _isLowMemMac = _isMac && _totalMemMB <= 16384
-const NUM_CTX = _isLowMemMac ? 2048 : 4096
-const KEEP_ALIVE = _isLowMemMac ? '2m' : '5m'
+const _isLowMem = _totalMemMB <= 16384
+
+// Platform-aware memory tiers (matching main process)
+const NUM_CTX = _isMac && _isLowMem ? 2048 : 4096
+const KEEP_ALIVE = _isMac && _isLowMem ? '2m' : '5m'
 
 export interface OllamaModel {
   name: string

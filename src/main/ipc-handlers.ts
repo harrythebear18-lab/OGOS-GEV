@@ -337,6 +337,21 @@ export function registerIpcHandlers(): void {
     return { path: filePath }
   })
 
+  ipcMain.handle(IPC.EXPORT_PNG, async (_event, data: { dataUrl: string }) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+      title: 'Export Screenshot',
+      defaultPath: 'screenshot.png',
+      filters: [{ name: 'PNG', extensions: ['png'] }],
+    })
+    if (canceled || !filePath) return null
+    // Strip the "data:image/png;base64," prefix and write as binary
+    const base64 = data?.dataUrl?.replace(/^data:image\/png;base64,/, '')
+    if (!base64) return null
+    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'))
+    return { path: filePath }
+  })
+
   ipcMain.handle(IPC.IMPORT_KML, async () => {
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {

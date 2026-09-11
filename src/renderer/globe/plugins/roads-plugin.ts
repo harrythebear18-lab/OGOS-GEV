@@ -91,6 +91,14 @@ export class RoadsPlugin implements EarthEnginePlugin {
     return this.status
   }
 
+  clear(): void {
+    this.dataSource?.entities.removeAll()
+    this.allSegments = []
+    this.lastBbox = null
+    this.lastViewBbox = null
+    this.status = { count: 0, status: 'nominal' }
+  }
+
   getControls(): PluginControlSpec[] {
     const rendered = this.dataSource?.entities.values.length ?? 0
     return [

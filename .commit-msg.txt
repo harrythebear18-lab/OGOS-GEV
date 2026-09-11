@@ -1,17 +1,24 @@
-Fix hydrology perf, viewport culling, entity inspection, GPU stability
+Port missing OGOS features: GIBS layers, elevation profile, hypotheses, integrity panel, privacy mode, per-layer clear, PNG export, memory tiers
 
-- runoff-service: replace O(n^2) queue.shift() with O(n) head pointer
-- roads/water plugins: dynamic viewport culling (2k-50k by altitude)
-- roads/water plugins: diff-based entity updates to prevent flicker
-- anomaly plugin: outline rings + markers instead of opaque fill
-- slope/canopy/anomaly/hydrology: post-await null checks for lifecycle safety
-- road/water services: remove dead overpass.kumi.by endpoint
-- Hud: add reset-to-north button
-- SatelliteOverlay: ISS now follows hillshade clock (mirrors sun orbit)
-- index.ts: drop Vulkan/WebGPU flags (GPU driver BSOD fix)
-- EntityInfoBox: new component for clickable entity inspection
-- DrawingManager: entity picking when draw mode is none
-- Globe/App: wire onEntityPick callback
+- Add 6 missing GIBS layers: MODIS NDVI 16-day, LST Day, Sentinel-2 Mosaic 20m,
+  GOES-East, Himawari-8, Meteosat-11 (now 12 total, matching OGOS)
+- Add ElevationProfile SVG chart component — renders elevation vs distance
+  with ascent/descent/slope stats when a line is drawn on the globe
+- Add Hypotheses tab to AI panel — generates structured search priorities
+  with confidence levels and suggested zones via Ollama
+- Add ClimateIntegrityPanel — floating panel showing integrity score gauge,
+  check summary (passed/warn/failed), space weather status, live feed counts
+- Add privacy mode to network plugin — masks IPs, hostnames, process names,
+  and city names; toggleable via plugin control (ON by default)
+- Add per-layer clear buttons — ✕ button on each plugin card header that
+  calls plugin.clear() to remove rendered entities without deactivating
+- Add clear() method to EarthEnginePlugin interface + roads/water/infra plugins
+- Add PNG/screenshot export — captures Cesium canvas and saves via IPC
+  (EXPORT_PNG channel + preload files.exportPNG)
+- Add platform-aware memory tiers — V8 heap limits via --max-old-space-size
+  based on platform + RAM (4 tiers: Mac low/high, Windows low/high)
+- Update ollama-service to use full platform-aware tier system
+- Add climate namespace to globals.d.ts type definitions
 
 Generated with [Devin](https://devin.ai)
 

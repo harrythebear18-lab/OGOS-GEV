@@ -239,6 +239,7 @@ const api = {
   files: {
     exportGeoJSON: (data: unknown) => ipcRenderer.invoke(IPC.EXPORT_GEOJSON, data),
     exportKML: (data: unknown) => ipcRenderer.invoke(IPC.EXPORT_KML, data),
+    exportPNG: (dataUrl: string) => ipcRenderer.invoke(IPC.EXPORT_PNG, { dataUrl }),
     importKml: () => ipcRenderer.invoke(IPC.IMPORT_KML),
     caseProfiles: (id?: string) => ipcRenderer.invoke(IPC.CASE_PROFILES, id ? { id } : {}),
   },

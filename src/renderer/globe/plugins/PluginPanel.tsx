@@ -143,6 +143,24 @@ function PluginCard({ plugin, active, onToggle }: {
           <span style={cardStyle.count}>{stats.count}</span>
         )}
 
+        {/* Per-layer clear button */}
+        {active && plugin.clear && (
+          <button
+            style={cardStyle.clearBtn}
+            onClick={(e) => {
+              e.stopPropagation()
+              plugin.clear?.()
+              setTimeout(() => {
+                setStats(plugin.getStats?.() ?? null)
+                setControls(plugin.getControls?.() ?? [])
+              }, 50)
+            }}
+            title={`Clear ${plugin.name} layer`}
+          >
+            ✕
+          </button>
+        )}
+
         {/* Expand arrow */}
         <span style={cardStyle.arrow}>{expanded ? '▾' : '▸'}</span>
       </div>
@@ -449,6 +467,23 @@ const cardStyle = {
     minWidth: 16,
     textAlign: 'center' as const,
     flexShrink: 0,
+  },
+  clearBtn: {
+    background: 'none',
+    border: '1px solid rgba(255, 74, 74, 0.3)',
+    color: '#ff8a8a',
+    fontSize: 8,
+    width: 16,
+    height: 16,
+    borderRadius: 2,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    padding: 0,
+    lineHeight: 1,
+    fontFamily: 'monospace' as const,
   },
   arrow: {
     fontSize: 8,

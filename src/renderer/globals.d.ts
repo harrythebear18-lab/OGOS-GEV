@@ -63,6 +63,15 @@ declare global {
         onFire: (cb: (update: unknown) => void) => void
       }
 
+      climate: {
+        onUpdate: (cb: (update: unknown) => void) => () => void
+        onIntegrity: (cb: (update: unknown) => void) => () => void
+        onAlert: (cb: (alert: unknown) => void) => () => void
+        setViewport: (bounds: unknown) => void
+        whitelist: (stationId: string) => Promise<unknown>
+        unwhitelist: (stationId: string) => Promise<unknown>
+      }
+
       ai: {
         health: () => Promise<{ running: boolean; models: { name: string; capabilities: string[] }[] }>
         createSession: () => Promise<{ sessionId: string; model: string; visionModel: string }>
@@ -83,6 +92,7 @@ declare global {
       files: {
         exportGeoJSON: (data: unknown) => Promise<string | null>
         exportKML: (data: unknown) => Promise<string | null>
+        exportPNG: (dataUrl: string) => Promise<string | null>
         importKml: () => Promise<{ features: any[] } | null>
         caseProfiles: (id?: string) => Promise<unknown>
       }

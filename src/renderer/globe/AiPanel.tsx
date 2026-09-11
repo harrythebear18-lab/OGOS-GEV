@@ -12,6 +12,15 @@ interface ChatMsg {
   error?: boolean
 }
 
+interface Hypothesis {
+  id: string
+  title: string
+  confidence: 'low' | 'moderate' | 'high' | 'critical'
+  rationale: string
+  suggestedZone?: string
+  createdAt: number
+}
+
 interface AiPanelProps {
   viewer: Cesium.Viewer | null
 }
@@ -25,6 +34,9 @@ export default function AiPanel({ viewer }: AiPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [streamingText, setStreamingText] = useState('')
   const [activeTools, setActiveTools] = useState<{ name: string; args: unknown }[]>([])
+  const [activeTab, setActiveTab] = useState<'chat' | 'hypotheses'>('chat')
+  const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
+  const [genHypotheses, setGenHypotheses] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const streamUnsubRef = useRef<(() => void) | null>(null)
   const msgIdCounter = useRef(0)
@@ -182,6 +194,55 @@ export default function AiPanel({ viewer }: AiPanelProps) {
     setActiveTools([])
   }, [])
 
+  const generateHypotheses = useCallback(async () => {
+    if (!sessionId || genHypotheses) return
+    setGenHypotheses(true)
+
+    try {
+      // Ask the AI to generate structured hypotheses about the current scene
+      const prompt = 'Generate 3-5 search hypotheses about the current viewport. For each, provide a title, confidence level (low/moderate/high/critical), rationale, and suggested search zone. Format as JSON array.'
+      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined }) as { response?: string; error?: string }
+
+      if (result?.error) {
+        console.warn('[AiPanel] hypothesis generation failed:', result.error)
+      } else {
+        // Try to parse JSON from the response
+        const text = result?.response || ''
+        const jsonMatch = text.match(/\[[\s\S]*\]/)
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]) as Array<{
+              title?: string
+              confidence?: string
+              rationale?: string
+              suggestedZone?: string
+            }>
+            const newHyps: Hypothesis[] = parsed
+              .filter((h) => h.title)
+              .map((h, i) => ({
+                id: `hyp-${Date.now()}-${i}`,
+                title: h.title!,
+                confidence: (['low', 'moderate', 'high', 'critical'].includes(h.confidence ?? '')
+                  ? h.confidence! : 'moderate') as Hypothesis['confidence'],
+                rationale: h.rationale ?? '',
+                suggestedZone: h.suggestedZone,
+                createdAt: Date.now(),
+              }))
+            if (newHyps.length > 0) {
+              setHypotheses((prev) => [...newHyps, ...prev].slice(0, 20))
+            }
+          } catch (parseErr) {
+            console.warn('[AiPanel] failed to parse hypotheses JSON:', parseErr)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[AiPanel] hypothesis generation error:', err)
+    } finally {
+      setGenHypotheses(false)
+    }
+  }, [sessionId, model, genHypotheses])
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -211,12 +272,28 @@ export default function AiPanel({ viewer }: AiPanelProps) {
           <span style={panelStyle.status(health?.running ?? false)}>
             {health?.running ? '● ONLINE' : '● OFFLINE'}
           </span>
-          {messages.length > 0 && (
+          {activeTab === 'chat' && messages.length > 0 && (
             <button onClick={clearChat} style={panelStyle.clearBtn} title="Clear chat">
               ✕ CLEAR
             </button>
           )}
         </div>
+      </div>
+
+      {/* Tab bar */}
+      <div style={panelStyle.tabBar}>
+        <button
+          style={panelStyle.tab(activeTab === 'chat')}
+          onClick={() => setActiveTab('chat')}
+        >
+          CHAT
+        </button>
+        <button
+          style={panelStyle.tab(activeTab === 'hypotheses')}
+          onClick={() => setActiveTab('hypotheses')}
+        >
+          HYPOTHESES {hypotheses.length > 0 && `(${hypotheses.length})`}
+        </button>
       </div>
 
       {/* Model selector */}
@@ -232,6 +309,9 @@ export default function AiPanel({ viewer }: AiPanelProps) {
         </select>
       )}
 
+      {/* Chat tab */}
+      {activeTab === 'chat' && (
+        <>
       {/* Chat messages */}
       <div ref={scrollRef} style={panelStyle.chatArea}>
         {messages.length === 0 && !loading && (
@@ -335,6 +415,58 @@ export default function AiPanel({ viewer }: AiPanelProps) {
           </button>
         </div>
       </div>
+      </>
+      )}
+
+      {/* Hypotheses tab */}
+      {activeTab === 'hypotheses' && (
+        <div style={panelStyle.hypArea}>
+          <div style={panelStyle.hypHeader}>
+            <button
+              onClick={generateHypotheses}
+              disabled={!health?.running || genHypotheses}
+              style={panelStyle.genBtn(!health?.running || genHypotheses)}
+              title="Generate search hypotheses from current scene"
+            >
+              {genHypotheses ? 'GENERATING...' : '+ GENERATE HYPOTHESES'}
+            </button>
+          </div>
+
+          {hypotheses.length === 0 && !genHypotheses && (
+            <div style={panelStyle.hypPlaceholder}>
+              <div style={{ marginBottom: 8, color: '#4a9eff' }}>No hypotheses yet</div>
+              Click "Generate Hypotheses" to ask the AI to produce structured
+              search priorities with confidence levels and suggested zones
+              based on the current viewport.
+            </div>
+          )}
+
+          {genHypotheses && (
+            <div style={panelStyle.thinking}>
+              <span style={panelStyle.dots}>●●●</span> generating hypotheses...
+            </div>
+          )}
+
+          {hypotheses.map((hyp) => (
+            <div key={hyp.id} style={panelStyle.hypCard(hyp.confidence)}>
+              <div style={panelStyle.hypCardHeader}>
+                <span style={panelStyle.confBadge(hyp.confidence)}>
+                  {hyp.confidence.toUpperCase()}
+                </span>
+                <span style={panelStyle.hypTitle}>{hyp.title}</span>
+              </div>
+              {hyp.rationale && (
+                <div style={panelStyle.hypRationale}>{hyp.rationale}</div>
+              )}
+              {hyp.suggestedZone && (
+                <div style={panelStyle.hypZone}>
+                  <span style={{ color: '#6b7d92' }}>Zone:</span> {hyp.suggestedZone}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -529,4 +661,104 @@ const panelStyle = {
     cursor: disabled ? 'not-allowed' : 'pointer',
     fontFamily: 'monospace',
   }),
+  tabBar: {
+    display: 'flex',
+    borderBottom: '1px solid #1e2a3a',
+  },
+  tab: (active: boolean) => ({
+    flex: 1,
+    padding: '6px 8px',
+    background: active ? 'rgba(74, 158, 255, 0.08)' : 'transparent',
+    color: active ? '#4a9eff' : '#6b7d92',
+    border: 'none',
+    borderBottom: active ? '2px solid #4a9eff' : '2px solid transparent',
+    fontSize: 10,
+    letterSpacing: 1,
+    fontWeight: 'bold' as const,
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+  }),
+  hypArea: {
+    flex: 1,
+    overflow: 'auto',
+    padding: 10,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+  },
+  hypHeader: {
+    marginBottom: 4,
+  },
+  genBtn: (disabled: boolean) => ({
+    width: '100%',
+    padding: '8px',
+    background: disabled ? '#1a2a3a' : '#1e3a4a',
+    color: disabled ? '#6b7d92' : '#4a9eff',
+    border: '1px solid #2a4a5a',
+    borderRadius: 3,
+    fontSize: 10,
+    letterSpacing: 1,
+    fontWeight: 'bold' as const,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontFamily: 'monospace',
+  }),
+  hypPlaceholder: {
+    color: '#6b7d92',
+    fontSize: 11,
+    fontStyle: 'italic' as const,
+    lineHeight: 1.6,
+    padding: '20px 8px',
+    textAlign: 'center' as const,
+  },
+  hypCard: (confidence: string) => ({
+    padding: '8px 10px',
+    background: 'rgba(11, 15, 20, 0.6)',
+    borderRadius: 4,
+    border: `1px solid ${
+      confidence === 'critical' ? 'rgba(255, 74, 74, 0.3)'
+      : confidence === 'high' ? 'rgba(255, 138, 74, 0.25)'
+      : confidence === 'moderate' ? 'rgba(255, 234, 74, 0.2)'
+      : 'rgba(74, 158, 255, 0.15)'
+    }`,
+  }),
+  hypCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  confBadge: (confidence: string) => ({
+    fontSize: 8,
+    fontWeight: 'bold' as const,
+    padding: '2px 6px',
+    borderRadius: 2,
+    letterSpacing: 0.5,
+    color: confidence === 'critical' ? '#ff4a4a'
+      : confidence === 'high' ? '#ff8a4a'
+      : confidence === 'moderate' ? '#ffea4a'
+      : '#4a9eff',
+    border: `1px solid ${
+      confidence === 'critical' ? 'rgba(255, 74, 74, 0.3)'
+      : confidence === 'high' ? 'rgba(255, 138, 74, 0.3)'
+      : confidence === 'moderate' ? 'rgba(255, 234, 74, 0.3)'
+      : 'rgba(74, 158, 255, 0.3)'
+    }`,
+  }),
+  hypTitle: {
+    fontSize: 11,
+    fontWeight: 'bold' as const,
+    color: '#d0d8e0',
+  },
+  hypRationale: {
+    fontSize: 10,
+    color: '#a0a8b0',
+    lineHeight: 1.5,
+    marginTop: 4,
+  },
+  hypZone: {
+    fontSize: 10,
+    color: '#8a9ab0',
+    marginTop: 4,
+    fontStyle: 'italic' as const,
+  },
 }

@@ -51,6 +51,7 @@ export class ExportImportPlugin implements EarthEnginePlugin {
     return [
       { type: 'button', id: 'exportGeoJSON', label: 'Export GeoJSON', variant: 'primary' },
       { type: 'button', id: 'exportKML', label: 'Export KML', variant: 'primary' },
+      { type: 'button', id: 'exportPNG', label: 'Export Screenshot (PNG)', variant: 'primary' },
       { type: 'button', id: 'import', label: 'Import KML/KMZ', variant: 'default' },
       { type: 'button', id: 'clear', label: 'Clear Imports', variant: 'danger', disabled: this.importedFeatures.length === 0 },
       { type: 'separator', id: 'sep1' },
@@ -63,6 +64,8 @@ export class ExportImportPlugin implements EarthEnginePlugin {
       await this.exportGeoJSON()
     } else if (id === 'exportKML') {
       await this.exportKML()
+    } else if (id === 'exportPNG') {
+      await this.exportPNG()
     } else if (id === 'import') {
       await this.importFile()
     } else if (id === 'clear') {
@@ -110,6 +113,24 @@ export class ExportImportPlugin implements EarthEnginePlugin {
       const result = await this.ipc.invoke('export:kml', data) as { path: string } | null
       this.status = { count: 1, status: 'nominal' }
       return result?.path || null
+    } catch (err) {
+      this.status = { ...this.status, status: 'error', error: String(err) }
+      return null
+    }
+  }
+
+  async exportPNG(): Promise<string | null> {
+    if (!this.ipc || !this.viewer) return null
+    this.status = { ...this.status, status: 'loading' }
+    try {
+      // Force a render to ensure the canvas is up to date
+      this.viewer.scene.requestRender()
+      // Capture the canvas as a PNG data URL
+      const canvas = this.viewer.canvas as HTMLCanvasElement
+      const dataUrl = canvas.toDataURL('image/png')
+      const result = await this.ipc.files.exportPNG(dataUrl) as string | null
+      this.status = { count: 1, status: 'nominal' }
+      return result
     } catch (err) {
       this.status = { ...this.status, status: 'error', error: String(err) }
       return null

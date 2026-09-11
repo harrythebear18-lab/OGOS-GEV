@@ -28,6 +28,7 @@ const GIBS_CATEGORIES: { key: GIBSLayer['category']; label: string; color: strin
   { key: 'false-color', label: 'False Color', color: '#a04aff' },
   { key: 'vegetation', label: 'Vegetation', color: '#4aff8a' },
   { key: 'thermal', label: 'Thermal', color: '#ff8a4a' },
+  { key: 'geostationary', label: 'Geostationary', color: '#ffcf4a' },
 ]
 
 export default function LayerPanel({

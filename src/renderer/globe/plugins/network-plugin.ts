@@ -20,6 +20,7 @@ export class NetworkPlugin implements EarthEnginePlugin {
   private dataSource: Cesium.CustomDataSource | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private show = true
+  private privacyMode = true
   private unsubscribe: (() => void) | null = null
   private unsubscribeVpn: (() => void) | null = null
   private unsubscribeLoc: (() => void) | null = null
@@ -72,6 +73,8 @@ export class NetworkPlugin implements EarthEnginePlugin {
     return [
       { type: 'toggle', id: 'visible', label: 'Visible', value: this.show },
       { type: 'separator', id: 'sep1' },
+      { type: 'toggle', id: 'privacy', label: 'Privacy Mode (mask IPs)', value: this.privacyMode },
+      { type: 'separator', id: 'sep2' },
       { type: 'display', id: 'count', label: 'Connections', value: String(this.status.count), color: this.status.count > 0 ? '#4aff8a' : '#6b7d92' },
     ]
   }
@@ -81,6 +84,34 @@ export class NetworkPlugin implements EarthEnginePlugin {
       this.show = value
       if (this.dataSource) this.dataSource.show = value
     }
+    if (id === 'privacy' && typeof value === 'boolean') {
+      this.privacyMode = value
+      // Re-render all entities with updated masking
+      this.refreshAllEntities()
+    }
+  }
+
+  /** Mask an IP address for privacy mode. */
+  private maskIp(ip: string): string {
+    if (!this.privacyMode) return ip
+    const parts = ip.split('.')
+    if (parts.length === 4) return `xxx.xxx.${parts[2]}.${parts[3]}`
+    return 'xxx.xxx.xxx.xxx'
+  }
+
+  /** Mask a hostname/process name for privacy mode. */
+  private maskName(name: string): string {
+    if (!this.privacyMode) return name
+    if (!name) return name
+    return name[0] + '••••'
+  }
+
+  /** Re-render all connection entities (e.g. after privacy toggle). */
+  private refreshAllEntities(): void {
+    if (!this.dataSource) return
+    this.dataSource.entities.removeAll()
+    this.knownConns.clear()
+    this.updateUserLocation()
   }
 
   private handleUpdate(connections: NetworkConnection[], userLocation?: GeoLocation | null): void {
@@ -190,11 +221,11 @@ export class NetworkPlugin implements EarthEnginePlugin {
           outlineWidth: 1,
         },
         properties: {
-          ip: c.remoteAddress,
+          ip: this.maskIp(c.remoteAddress),
           port: c.remotePort,
           country: c.geo.country,
-          city: c.geo.city,
-          process: c.processName,
+          city: this.privacyMode ? '•••' : c.geo.city,
+          process: this.maskName(c.processName),
         },
       } as any)
     }

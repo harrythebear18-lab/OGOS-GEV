@@ -113,6 +113,8 @@ export interface EarthEnginePlugin {
   getControls?(): PluginControlSpec[]
   /** Handle a control interaction (button click, slider change, etc.) */
   onControl?(id: string, value?: unknown): void
+  /** Clear all rendered entities without deactivating the plugin */
+  clear?(): void
 }
 
 class PluginManager {

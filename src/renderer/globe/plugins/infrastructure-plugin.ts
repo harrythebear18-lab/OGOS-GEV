@@ -129,6 +129,14 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
     return this.status
   }
 
+  clear(): void {
+    this.dataSource?.entities.removeAll()
+    this.allFeatures = []
+    this.lastViewBbox = null
+    this.lastError = null
+    this.status = { count: 0, status: 'nominal' }
+  }
+
   getControls(): PluginControlSpec[] {
     const rendered = this.dataSource?.entities.values.length ?? 0
     const airports = this.allFeatures.filter((f) => f.type === 'airport' || f.type === 'helipad').length

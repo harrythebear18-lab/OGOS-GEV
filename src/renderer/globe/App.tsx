@@ -10,6 +10,8 @@ import PluginPanel from './plugins/PluginPanel'
 import InspectorPanel from './InspectorPanel'
 import StatusBar from './StatusBar'
 import EntityInfoBox from './EntityInfoBox'
+import ElevationProfile from './ElevationProfile'
+import ClimateIntegrityPanel from './ClimateIntegrityPanel'
 import AiPanel from './AiPanel'
 import { pluginManager } from './plugins'
 import type { PluginContext } from './plugins'
@@ -48,6 +50,7 @@ export default function App() {
   // ── Drawing / Selection ──
   const [drawMode, setDrawMode] = useState<DrawMode>('none')
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [showIntegrity, setShowIntegrity] = useState<boolean>(false)
   const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
 
   // ── Entity Info Box ──
@@ -277,6 +280,54 @@ export default function App() {
 
       {/* Entity info box — appears when clicking on any entity */}
       <EntityInfoBox entity={pickedEntity} onClose={() => setPickedEntity(null)} />
+
+      {/* Elevation profile — appears when a line is drawn */}
+      {selection?.type === 'line' && (
+        <ElevationProfile
+          lineCoords={selection.coords}
+          onClose={() => setSelection(null)}
+        />
+      )}
+
+      {/* Climate integrity panel — toggleable floating panel */}
+      {showIntegrity && (
+        <div style={{ position: 'absolute', top: 60, right: 12, zIndex: 200, maxWidth: 280 }}>
+          <ClimateIntegrityPanel />
+          <button
+            onClick={() => setShowIntegrity(false)}
+            style={{
+              position: 'absolute', top: 4, right: 8,
+              background: 'none', border: 'none', color: '#7a8a9a',
+              cursor: 'pointer', fontSize: 12,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Toggle button for integrity panel */}
+      {!showIntegrity && (
+        <button
+          onClick={() => setShowIntegrity(true)}
+          style={{
+            position: 'absolute', top: 60, right: 12, zIndex: 200,
+            background: 'rgba(11, 15, 20, 0.9)',
+            border: '1px solid #1e2a3a',
+            color: '#4a9eff',
+            padding: '4px 8px',
+            borderRadius: 3,
+            fontSize: 9,
+            letterSpacing: 0.5,
+            cursor: 'pointer',
+            fontFamily: 'monospace',
+            fontWeight: 'bold',
+          }}
+          title="Show climate integrity panel"
+        >
+          INTEGRITY
+        </button>
+      )}
     </CockpitShell>
   )
 }

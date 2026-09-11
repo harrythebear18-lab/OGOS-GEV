@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
+import os from 'node:os'
 import { registerIpcHandlers } from './ipc-handlers'
 import { registerWindow } from './windows'
 import { liveData } from './services/live/live-data'
@@ -12,6 +13,42 @@ import { startClipServer, stopClipServer } from './services/clip-manager'
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 
+// ── Platform-aware memory tiers ──
+// Adjust V8 heap limits and Ollama settings based on platform and available RAM.
+// This prevents OOM crashes on low-RAM systems and allows more headroom on high-RAM.
+const totalMemMB = Math.round(os.totalmem() / (1024 * 1024))
+const isMac = process.platform === 'darwin'
+const isLowMem = totalMemMB <= 16384
+
+let heapLimitMB: number
+let ollamaCtx: number
+let ollamaKeepAlive: string
+
+if (isMac && isLowMem) {
+  // macOS portable (<=16 GB) — conservative
+  heapLimitMB = 384
+  ollamaCtx = 2048
+  ollamaKeepAlive = '2m'
+} else if (isMac && !isLowMem) {
+  // macOS desktop (>16 GB) — generous
+  heapLimitMB = 6144
+  ollamaCtx = 4096
+  ollamaKeepAlive = '5m'
+} else if (!isMac && isLowMem) {
+  // Windows low (<=16 GB) — moderate
+  heapLimitMB = 2048
+  ollamaCtx = 4096
+  ollamaKeepAlive = '5m'
+} else {
+  // Windows high (>16 GB) — generous
+  heapLimitMB = 4096
+  ollamaCtx = 4096
+  ollamaKeepAlive = '5m'
+}
+
+// Apply V8 heap limit to the renderer process
+app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${heapLimitMB}`)
+
 console.log('═══════════════════════════════════════════════════')
 console.log('  OSINT SENTINEL WORKSTATION — MAIN PROCESS START')
 console.log('═══════════════════════════════════════════════════')
@@ -19,6 +56,8 @@ console.log(`[main] Electron: ${process.versions.electron}`)
 console.log(`[main] Node: ${process.versions.node}`)
 console.log(`[main] Chromium: ${process.versions.chrome}`)
 console.log(`[main] Platform: ${process.platform} ${process.arch}`)
+console.log(`[main] Total RAM: ${totalMemMB} MB`)
+console.log(`[main] Memory tier: heap=${heapLimitMB} MB, ollama_ctx=${ollamaCtx}, keep_alive=${ollamaKeepAlive}`)
 console.log(`[main] isDev: ${isDev}`)
 console.log(`[main] ELECTRON_RENDERER_URL: ${process.env['ELECTRON_RENDERER_URL'] ?? '(not set)'}`)
 console.log(`[main] ELECTRON_RUN_AS_NODE: ${process.env['ELECTRON_RUN_AS_NODE'] ?? '(not set)'}`)
