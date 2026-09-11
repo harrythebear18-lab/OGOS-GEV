@@ -2,6 +2,21 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc'
 
 /**
+ * Subscribe to an IPC channel and return an unsubscribe function.
+ * This is the standard pattern for all pushed-event subscriptions.
+ */
+function subscribe<T>(
+  channel: string,
+  cb: (payload: T) => void,
+): () => void {
+  const handler = (_e: Electron.IpcRendererEvent, payload: T) => cb(payload)
+  ipcRenderer.on(channel, handler)
+  return () => {
+    ipcRenderer.removeListener(channel, handler)
+  }
+}
+
+/**
  * Typed preload API. Mirrors OGOS's window.terrain / window.ai / window.climate
  * pattern but routed through our IPC contract.
  */
@@ -13,6 +28,7 @@ const api = {
   on: (channel: string, callback: (...args: unknown[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args)
     ipcRenderer.on(channel, handler)
+    return () => ipcRenderer.removeListener(channel, handler)
   },
   off: (channel: string) => {
     ipcRenderer.removeAllListeners(channel)
@@ -22,10 +38,7 @@ const api = {
   scene: {
     get: () => ipcRenderer.invoke(IPC.GET_SCENE_CONTEXT),
     set: (patch: unknown) => ipcRenderer.send(IPC.SET_SCENE_CONTEXT, patch),
-    onContext: (cb: (ctx: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, ctx: unknown) => cb(ctx)
-      ipcRenderer.on(IPC.SCENE_CONTEXT_CHANGED, handler)
-    },
+    onContext: (cb: (ctx: unknown) => void) => subscribe(IPC.SCENE_CONTEXT_CHANGED, cb),
     setStack: (stack: string) => ipcRenderer.send(IPC.GLOBE_SET_STACK, stack),
     sendViewport: (vp: unknown) => ipcRenderer.send(IPC.GLOBE_VIEWPORT, vp),
   },
@@ -77,47 +90,20 @@ const api = {
 
   /* ── Live data (pushed from main) ── */
   live: {
-    onUpdate: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.LIVE_UPDATE, handler)
-    },
-    onAircraft: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.AIRCRAFT_UPDATE, handler)
-    },
-    onEarthquake: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.EARTHQUAKE_UPDATE, handler)
-    },
-    onFire: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.FIRE_UPDATE, handler)
-    },
-    onVessel: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.VESSEL_UPDATE, handler)
-    },
-    onLightning: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.LIGHTNING_UPDATE, handler)
-    },
+    onUpdate: (cb: (update: unknown) => void) => subscribe(IPC.LIVE_UPDATE, cb),
+    onAircraft: (cb: (update: unknown) => void) => subscribe(IPC.AIRCRAFT_UPDATE, cb),
+    onEarthquake: (cb: (update: unknown) => void) => subscribe(IPC.EARTHQUAKE_UPDATE, cb),
+    onFire: (cb: (update: unknown) => void) => subscribe(IPC.FIRE_UPDATE, cb),
+    onVessel: (cb: (update: unknown) => void) => subscribe(IPC.VESSEL_UPDATE, cb),
+    onLightning: (cb: (update: unknown) => void) => subscribe(IPC.LIGHTNING_UPDATE, cb),
   },
 
   /* ── Climate / Ocean (pushed from main) ── */
   climate: {
-    onUpdate: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.CLIMATE_UPDATE, handler)
-    },
+    onUpdate: (cb: (update: unknown) => void) => subscribe(IPC.CLIMATE_UPDATE, cb),
     getCurrent: () => ipcRenderer.invoke(IPC.CLIMATE_GET_CURRENT),
-    onIntegrity: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.CLIMATE_INTEGRITY, handler)
-    },
-    onAlert: (cb: (alert: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
-      ipcRenderer.on(IPC.CLIMATE_ALERT, handler)
-    },
+    onIntegrity: (cb: (update: unknown) => void) => subscribe(IPC.CLIMATE_INTEGRITY, cb),
+    onAlert: (cb: (alert: unknown) => void) => subscribe(IPC.CLIMATE_ALERT, cb),
     setViewport: (bounds: unknown) => ipcRenderer.send(IPC.CLIMATE_SET_VIEWPORT, bounds),
     whitelist: (stationId: string) => ipcRenderer.invoke(IPC.CLIMATE_WHITELIST, stationId),
     unwhitelist: (stationId: string) => ipcRenderer.invoke(IPC.CLIMATE_UNWHITELIST, stationId),
@@ -125,51 +111,27 @@ const api = {
 
   /* ── Storms (pushed) ── */
   storms: {
-    onUpdate: (cb: (storms: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, storms: unknown) => cb(storms)
-      ipcRenderer.on(IPC.STORM_UPDATE, handler)
-    },
-    onTrackUpdate: (cb: (tracks: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, tracks: unknown) => cb(tracks)
-      ipcRenderer.on(IPC.STORM_TRACK_UPDATE, handler)
-    },
+    onUpdate: (cb: (storms: unknown) => void) => subscribe(IPC.STORM_UPDATE, cb),
+    onTrackUpdate: (cb: (tracks: unknown) => void) => subscribe(IPC.STORM_TRACK_UPDATE, cb),
   },
 
   /* ── Space weather (pushed) ── */
   spaceWeather: {
-    onUpdate: (cb: (data: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, data: unknown) => cb(data)
-      ipcRenderer.on(IPC.SPACE_WEATHER_UPDATE, handler)
-    },
+    onUpdate: (cb: (data: unknown) => void) => subscribe(IPC.SPACE_WEATHER_UPDATE, cb),
   },
 
   /* ── Predictions (pushed) ── */
   predictions: {
-    onUpdate: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.PREDICTION_UPDATE, handler)
-    },
+    onUpdate: (cb: (update: unknown) => void) => subscribe(IPC.PREDICTION_UPDATE, cb),
     getCurrent: () => ipcRenderer.invoke(IPC.PREDICTION_GET_CURRENT),
   },
 
   /* ── Grid (pushed + invoke) ── */
   grid: {
-    onUpdate: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.GRID_UPDATE, handler)
-    },
-    onAlert: (cb: (alert: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
-      ipcRenderer.on(IPC.GRID_ALERT, handler)
-    },
-    onIntegrity: (cb: (integrity: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, integrity: unknown) => cb(integrity)
-      ipcRenderer.on(IPC.GRID_INTEGRITY, handler)
-    },
-    onTraffic: (cb: (traffic: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, traffic: unknown) => cb(traffic)
-      ipcRenderer.on(IPC.GRID_TRAFFIC, handler)
-    },
+    onUpdate: (cb: (update: unknown) => void) => subscribe(IPC.GRID_UPDATE, cb),
+    onAlert: (cb: (alert: unknown) => void) => subscribe(IPC.GRID_ALERT, cb),
+    onIntegrity: (cb: (integrity: unknown) => void) => subscribe(IPC.GRID_INTEGRITY, cb),
+    onTraffic: (cb: (traffic: unknown) => void) => subscribe(IPC.GRID_TRAFFIC, cb),
     whitelist: (assetId: string) => ipcRenderer.invoke(IPC.GRID_WHITELIST, assetId),
     unwhitelist: (assetId: string) => ipcRenderer.invoke(IPC.GRID_UNWHITELIST, assetId),
     getWhitelist: () => ipcRenderer.invoke(IPC.GRID_GET_WHITELIST),
@@ -183,30 +145,12 @@ const api = {
 
   /* ── Network (pushed + invoke) ── */
   network: {
-    onUpdate: (cb: (update: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
-      ipcRenderer.on(IPC.NET_UPDATE, handler)
-    },
-    onAlert: (cb: (alert: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
-      ipcRenderer.on(IPC.NET_ALERT, handler)
-    },
-    onHealth: (cb: (health: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, health: unknown) => cb(health)
-      ipcRenderer.on(IPC.NET_HEALTH, handler)
-    },
-    onOutage: (cb: (outage: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, outage: unknown) => cb(outage)
-      ipcRenderer.on(IPC.NET_OUTAGE, handler)
-    },
-    onVpn: (cb: (status: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, status: unknown) => cb(status)
-      ipcRenderer.on(IPC.NET_VPN, handler)
-    },
-    onUserLocation: (cb: (loc: unknown) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, loc: unknown) => cb(loc)
-      ipcRenderer.on(IPC.NET_USER_LOCATION, handler)
-    },
+    onUpdate: (cb: (update: unknown) => void) => subscribe(IPC.NET_UPDATE, cb),
+    onAlert: (cb: (alert: unknown) => void) => subscribe(IPC.NET_ALERT, cb),
+    onHealth: (cb: (health: unknown) => void) => subscribe(IPC.NET_HEALTH, cb),
+    onOutage: (cb: (outage: unknown) => void) => subscribe(IPC.NET_OUTAGE, cb),
+    onVpn: (cb: (status: unknown) => void) => subscribe(IPC.NET_VPN, cb),
+    onUserLocation: (cb: (loc: unknown) => void) => subscribe(IPC.NET_USER_LOCATION, cb),
     refreshVpn: () => ipcRenderer.invoke(IPC.NET_VPN_REFRESH),
     geoipLookup: (ip: string) => ipcRenderer.invoke(IPC.NET_GEOIP_LOOKUP, ip),
     speedTest: () => ipcRenderer.invoke(IPC.NET_SPEEDTEST_RUN),

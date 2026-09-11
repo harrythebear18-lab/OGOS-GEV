@@ -23,27 +23,36 @@
 
 import { useState, useEffect, useCallback } from 'react'
 
+interface NetStats {
+  totalConnections?: number
+  activeConnections?: number
+  uniqueCountries?: number
+  uniqueIPs?: number
+  topProcesses?: { name: string; connections: number }[]
+  topCountries?: { country: string; count: number }[]
+}
+
 interface NetUpdate {
-  connections?: number
-  tcpCount?: number
-  udpCount?: number
-  establishedCount?: number
-  listeningCount?: number
+  connections?: { protocol?: string; state?: string }[]
+  stats?: NetStats
+  userLocation?: UserLocation
   timestamp?: number
 }
 
 interface NetHealth {
-  latencyMs?: number
-  packetLossPct?: number
-  medium?: string
-  isp?: string
+  status?: string
+  connectivityScore?: number
+  latency?: number
+  packetLoss?: number
   timestamp?: number
 }
 
 interface NetVpn {
-  active?: boolean
-  provider?: string
-  exitIp?: string
+  isActive?: boolean
+  publicIP?: string
+  vpnProvider?: string | null
+  dnsLeakDetected?: boolean
+  killSwitchActive?: boolean
 }
 
 interface UserLocation {
@@ -51,8 +60,12 @@ interface UserLocation {
   city?: string
   region?: string
   country?: string
+  countryCode?: string
   lat?: number
   lon?: number
+  isp?: string
+  org?: string
+  timezone?: string
 }
 
 interface SpeedTestResult {
@@ -69,8 +82,9 @@ interface DnsTestResult {
 }
 
 interface GridUpdate {
-  assets?: number
-  measurements?: number
+  assets?: unknown[]
+  measurements?: unknown[]
+  interconnects?: unknown[]
   timestamp?: number
 }
 
@@ -233,59 +247,92 @@ export default function NetworkGridPanel() {
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Connections</span>
         <span style={panelStyle.value}>
-          {netUpdate?.establishedCount ?? '—'} est / {netUpdate?.listeningCount ?? '—'} lstn
+          {netUpdate?.stats?.activeConnections ?? '—'} active / {netUpdate?.stats?.totalConnections ?? '—'} total
         </span>
       </div>
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>TCP / UDP</span>
         <span style={panelStyle.value}>
-          {netUpdate?.tcpCount ?? '—'} / {netUpdate?.udpCount ?? '—'}
+          {netUpdate?.connections?.filter((c) => c.protocol === 'TCP').length ?? '—'} / {netUpdate?.connections?.filter((c) => c.protocol === 'UDP').length ?? '—'}
         </span>
+      </div>
+      <div style={panelStyle.row}>
+        <span style={panelStyle.label}>Unique IPs</span>
+        <span style={panelStyle.value}>{netUpdate?.stats?.uniqueIPs ?? '—'}</span>
+      </div>
+      <div style={panelStyle.row}>
+        <span style={panelStyle.label}>Countries</span>
+        <span style={panelStyle.value}>{netUpdate?.stats?.uniqueCountries ?? '—'}</span>
       </div>
 
       {/* Health */}
       <div style={panelStyle.row}>
+        <span style={panelStyle.label}>Status</span>
+        <span style={
+          netHealth?.status === 'healthy' ? panelStyle.valueActive
+          : netHealth?.status === 'degraded' ? panelStyle.valueWarn
+          : netHealth?.status === 'critical' ? panelStyle.valueDanger
+          : panelStyle.valueMuted
+        }>
+          {netHealth?.status?.toUpperCase() ?? '—'}
+        </span>
+      </div>
+      <div style={panelStyle.row}>
         <span style={panelStyle.label}>Latency</span>
         <span style={panelStyle.value}>
-          {netHealth?.latencyMs !== undefined ? `${netHealth.latencyMs.toFixed(0)}ms` : '—'}
+          {netHealth?.latency !== undefined ? `${netHealth.latency.toFixed(0)}ms` : '—'}
         </span>
       </div>
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Packet Loss</span>
         <span style={panelStyle.value}>
-          {netHealth?.packetLossPct !== undefined ? `${netHealth.packetLossPct.toFixed(1)}%` : '—'}
+          {netHealth?.packetLoss !== undefined ? `${(netHealth.packetLoss * 100).toFixed(1)}%` : '—'}
         </span>
       </div>
-      {netHealth?.isp && (
-        <div style={panelStyle.row}>
-          <span style={panelStyle.label}>ISP</span>
-          <span style={panelStyle.valueSmall}>{netHealth.isp}</span>
-        </div>
-      )}
+      <div style={panelStyle.row}>
+        <span style={panelStyle.label}>Score</span>
+        <span style={panelStyle.value}>
+          {netHealth?.connectivityScore !== undefined ? `${netHealth.connectivityScore.toFixed(0)}/100` : '—'}
+        </span>
+      </div>
 
       {/* VPN */}
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>VPN</span>
-        <span style={netVpn?.active ? panelStyle.valueActive : panelStyle.valueMuted}>
-          {netVpn?.active ? `ACTIVE (${netVpn.provider ?? 'unknown'})` : 'INACTIVE'}
+        <span style={netVpn?.isActive ? panelStyle.valueActive : panelStyle.valueMuted}>
+          {netVpn?.isActive ? `ACTIVE (${netVpn.vpnProvider ?? 'unknown'})` : 'INACTIVE'}
         </span>
         <button style={panelStyle.miniBtn} onClick={refreshVpn}>↻</button>
       </div>
-      {netVpn?.exitIp && (
+      {netVpn?.publicIP && (
         <div style={panelStyle.row}>
-          <span style={panelStyle.label}>Exit IP</span>
-          <span style={panelStyle.valueSmall}>{netVpn.exitIp}</span>
+          <span style={panelStyle.label}>Public IP</span>
+          <span style={panelStyle.valueSmall}>{netVpn.publicIP}</span>
+        </div>
+      )}
+      {netVpn?.dnsLeakDetected && (
+        <div style={panelStyle.row}>
+          <span style={panelStyle.label}>DNS Leak</span>
+          <span style={panelStyle.valueDanger}>DETECTED</span>
         </div>
       )}
 
       {/* User location */}
       {userLocation && (
-        <div style={panelStyle.row}>
-          <span style={panelStyle.label}>Location</span>
-          <span style={panelStyle.valueSmall}>
-            {userLocation.city ?? '—'}, {userLocation.country ?? '—'}
-          </span>
-        </div>
+        <>
+          <div style={panelStyle.row}>
+            <span style={panelStyle.label}>Location</span>
+            <span style={panelStyle.valueSmall}>
+              {userLocation.city ?? '—'}, {userLocation.country ?? '—'}
+            </span>
+          </div>
+          {userLocation.isp && (
+            <div style={panelStyle.row}>
+              <span style={panelStyle.label}>ISP</span>
+              <span style={panelStyle.valueSmall}>{userLocation.isp}</span>
+            </div>
+          )}
+        </>
       )}
 
       {/* Speed test */}
@@ -346,11 +393,15 @@ export default function NetworkGridPanel() {
 
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Assets</span>
-        <span style={panelStyle.value}>{gridUpdate?.assets ?? '—'}</span>
+        <span style={panelStyle.value}>{gridUpdate?.assets?.length ?? '—'}</span>
       </div>
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Measurements</span>
-        <span style={panelStyle.value}>{gridUpdate?.measurements ?? '—'}</span>
+        <span style={panelStyle.value}>{gridUpdate?.measurements?.length ?? '—'}</span>
+      </div>
+      <div style={panelStyle.row}>
+        <span style={panelStyle.label}>Interconnects</span>
+        <span style={panelStyle.value}>{gridUpdate?.interconnects?.length ?? '—'}</span>
       </div>
 
       {/* Cross-domain influence */}
@@ -450,6 +501,18 @@ const panelStyle = {
   valueActive: {
     fontSize: 10,
     color: '#4aff8a',
+    fontWeight: 'bold' as const,
+    flex: 1,
+  },
+  valueWarn: {
+    fontSize: 10,
+    color: '#ffea4a',
+    fontWeight: 'bold' as const,
+    flex: 1,
+  },
+  valueDanger: {
+    fontSize: 10,
+    color: '#ff4a4a',
     fontWeight: 'bold' as const,
     flex: 1,
   },

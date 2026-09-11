@@ -1,25 +1,13 @@
-Port OGOS integrity pipeline, incident workflow, explainability overlay, and network/grid UI
+Fix two crashes: NetworkGridPanel rendering object arrays + preload missing unsub returns
 
-- Port four climate integrity services from OGOS: DataFlowMonitor,
-  SensorVerifier, ResultsVerifier, HeuristicWatchdog. Wire them into
-  ClimateMonitor so IntegrityUpdate now carries real sensor health,
-  pipeline scores, and cross-verification arrays instead of empties.
-- Extend IntegritySummary with sensor/pipeline/results layer scores
-  and flag tallies; update ClimateIntegrityPanel to render them.
-- Add IncidentPanel for the Fall -> Flow -> Find missing-person
-  workflow (route plan, fall-risk map, remains corridor) with
-  bounds validation and fly-to controls.
-- Add ExplainabilityOverlay rendering AI hypothesis zones as
-  confidence-colored polygons on the Cesium globe with a click-to-
-  inspect reasoning popup. Extend AiPanel hypothesis schema to
-  carry zone polygons.
-- Add NetworkGridPanel exposing network (speed test, DNS test, VPN,
-  GeoIP, alerts) and grid (assets, cross-domain toggle, snooze,
-  alerts) operational controls.
-- Extend preload + globals.d.ts with grid and network API surfaces;
-  add IPC handlers for grid snooze/settings and climate snooze.
-- Wire export collectResults() to gather real plugin results so
-  GeoJSON/KML exports are no longer empty.
+- NetworkGridPanel: grid update payload contains arrays of asset/measurement
+  objects, not counts. Use .length for display. Also fix NetHealth/NetVpn
+  interfaces to match actual NetworkHealth/VpnStatus shapes (status,
+  connectivityScore, latency, packetLoss, isActive, publicIP, vpnProvider).
+- Preload: all on* subscription methods now return proper unsubscribe
+  functions via a shared subscribe() helper. Previously they returned
+  undefined, causing "unsub is not a function" crashes in components
+  that expected a cleanup return (e.g. PredictionPanel).
 
 Generated with [Devin](https://devin.ai)
 
