@@ -1,26 +1,22 @@
-Visualize ocean currents and Argo drift trails on climate stations
+Add elegant weather forecast + prediction engine UI overlays
 
-- Add trajectory field to ClimateMeasurement type for Argo drift history
-- Update erddap-fetcher Argo fetcher to collect last 30 positions per float
-  (capped at 30 points per float to bound memory)
-- Rewrite climate-stations plugin with full visualization:
-  - Current vector arrows for TAO current stations (speed-scaled, color-coded)
-  - Argo drift trail polylines (glowing lines showing recent positions)
-  - Arrowhead points at current vector tips
-  - Larger point size for Argo floats vs static buoys
-  - disableDepthTestDistance for better visibility at distance
-- Expose full measurement fields in entity properties:
-  waterTemp, airTemp, windSpeed, windDir, waveHeight, wavePeriod,
-  pressure, salinity, co2, currentSpeed, currentDir, depth, oxygen, ph,
-  hasTrajectory, trajectoryPoints
-- Add plugin controls: toggle current arrows, toggle drift trails,
-  display counts for Argo floats and current sensors
-- Add clear() method for per-layer clear button
-- Update EntityInfoBox formatters for new fields:
-  windDir (°), waveHeight (m), wavePeriod (s), salinity (PSU),
-  co2 (ppm), currentSpeed (m/s), currentDir (°), depth (m/km),
-  oxygen (µmol/kg), ph, trajectoryPoints (pts)
-- Update README climate tier description
+- WeatherOverlay: floating panel with current conditions card (temp, feels-like,
+  wind, humidity, precip, weather icon) + 24h hourly forecast chart (SVG temp
+  line + precip probability bars) + radar/satellite toggle buttons
+- PredictionPanel: floating panel subscribing to PREDICTION_UPDATE IPC channel,
+  showing 7-model prediction engine output:
+  - Summary stats (total, high risk, critical, avg confidence)
+  - Severe weather alerts (expandable, severity/confidence badges)
+  - Storm track predictions (expandable, with track points + wind speed)
+  - Climate anomaly predictions (expandable)
+  - Sensor failure predictions (expandable)
+  - Precipitation forecast (expandable)
+  - SST anomalies (region + deviation)
+  - Teleconnection indices (ENSO, NAO, etc.)
+- Add weather-codes.ts shared helper for WMO weather code descriptions
+- Add predictions namespace to globals.d.ts type definitions
+- Wire both overlays into App.tsx with toolbar buttons (INTEGRITY, WEATHER, PREDICT)
+- Only one overlay visible at a time (mutually exclusive toggles)
 
 Generated with [Devin](https://devin.ai)
 

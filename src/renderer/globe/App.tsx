@@ -12,6 +12,8 @@ import StatusBar from './StatusBar'
 import EntityInfoBox from './EntityInfoBox'
 import ElevationProfile from './ElevationProfile'
 import ClimateIntegrityPanel from './ClimateIntegrityPanel'
+import WeatherOverlay from './WeatherOverlay'
+import PredictionPanel from './PredictionPanel'
 import AiPanel from './AiPanel'
 import { pluginManager } from './plugins'
 import type { PluginContext } from './plugins'
@@ -51,6 +53,8 @@ export default function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>('none')
   const [selection, setSelection] = useState<Selection | null>(null)
   const [showIntegrity, setShowIntegrity] = useState<boolean>(false)
+  const [showWeather, setShowWeather] = useState<boolean>(false)
+  const [showPredictions, setShowPredictions] = useState<boolean>(false)
   const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
 
   // ── Entity Info Box ──
@@ -289,45 +293,58 @@ export default function App() {
         />
       )}
 
+      {/* Toggle button toolbar for floating panels */}
+      <div style={{
+        position: 'absolute', top: 60, right: 12, zIndex: 200,
+        display: 'flex', gap: 4,
+      }}>
+        <ToolbarBtn label="INTEGRITY" color="#4a9eff" active={showIntegrity} onClick={() => { setShowIntegrity(!showIntegrity); setShowWeather(false); setShowPredictions(false) }} />
+        <ToolbarBtn label="WEATHER" color="#4affd4" active={showWeather} onClick={() => { setShowWeather(!showWeather); setShowIntegrity(false); setShowPredictions(false) }} />
+        <ToolbarBtn label="PREDICT" color="#a04aff" active={showPredictions} onClick={() => { setShowPredictions(!showPredictions); setShowIntegrity(false); setShowWeather(false) }} />
+      </div>
+
       {/* Climate integrity panel — toggleable floating panel */}
       {showIntegrity && (
-        <div style={{ position: 'absolute', top: 60, right: 12, zIndex: 200, maxWidth: 280 }}>
+        <div style={{ position: 'absolute', top: 88, right: 12, zIndex: 200, maxWidth: 280 }}>
           <ClimateIntegrityPanel />
-          <button
-            onClick={() => setShowIntegrity(false)}
-            style={{
-              position: 'absolute', top: 4, right: 8,
-              background: 'none', border: 'none', color: '#7a8a9a',
-              cursor: 'pointer', fontSize: 12,
-            }}
-          >
-            ✕
-          </button>
         </div>
       )}
 
-      {/* Toggle button for integrity panel */}
-      {!showIntegrity && (
-        <button
-          onClick={() => setShowIntegrity(true)}
-          style={{
-            position: 'absolute', top: 60, right: 12, zIndex: 200,
-            background: 'rgba(11, 15, 20, 0.9)',
-            border: '1px solid #1e2a3a',
-            color: '#4a9eff',
-            padding: '4px 8px',
-            borderRadius: 3,
-            fontSize: 9,
-            letterSpacing: 0.5,
-            cursor: 'pointer',
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
-          }}
-          title="Show climate integrity panel"
-        >
-          INTEGRITY
-        </button>
+      {/* Weather overlay — current conditions + 24h forecast chart */}
+      {showWeather && (
+        <WeatherOverlay onClose={() => setShowWeather(false)} />
+      )}
+
+      {/* Prediction panel — 7-model prediction engine display */}
+      {showPredictions && (
+        <PredictionPanel onClose={() => setShowPredictions(false)} />
       )}
     </CockpitShell>
+  )
+}
+
+/** Toolbar button for floating panel toggles */
+function ToolbarBtn({ label, color, active, onClick }: {
+  label: string; color: string; active: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? `${color}20` : 'rgba(11, 15, 20, 0.9)',
+        border: active ? `1px solid ${color}` : '1px solid #1e2a3a',
+        color: active ? color : '#6b7d92',
+        padding: '4px 8px',
+        borderRadius: 3,
+        fontSize: 9,
+        letterSpacing: 0.5,
+        cursor: 'pointer',
+        fontFamily: 'monospace',
+        fontWeight: 'bold',
+      }}
+      title={`Toggle ${label} panel`}
+    >
+      {label}
+    </button>
   )
 }

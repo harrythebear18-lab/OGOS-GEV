@@ -51,8 +51,8 @@ declare global {
       }
 
       weather: {
-        radar: () => Promise<unknown>
-        forecast: (point: { lng: number; lat: number }) => Promise<unknown>
+        radar: () => Promise<any>
+        forecast: (point: { lng: number; lat: number }) => Promise<any>
         rainfall: (bounds: unknown) => Promise<number>
       }
 
@@ -100,6 +100,10 @@ declare global {
       trip: {
         derive: (params: unknown) => Promise<unknown>
         calibrate: (profile: unknown) => Promise<unknown>
+      }
+
+      predictions: {
+        onUpdate: (cb: (update: unknown) => void) => () => void
       }
 
       climateHelpers: {
