@@ -14,12 +14,24 @@
 import * as Cesium from 'cesium'
 import type { DrawMode, Selection, LngLat } from '@shared/types'
 
+/** Information about a picked Cesium entity, for the info box. */
+export interface PickedEntity {
+  id: string
+  name: string
+  type: string
+  lng: number
+  lat: number
+  height: number
+  properties: Record<string, unknown>
+}
+
 export class DrawingManager {
   private viewer: Cesium.Viewer
   private handler: Cesium.ScreenSpaceEventHandler | null = null
   private mode: DrawMode = 'none'
   private onSelectionChange: (sel: Selection | null) => void
   private onPinPlace: (point: LngLat) => void
+  private onEntityPick: (entity: PickedEntity | null) => void
 
   // Drawing state
   private isDragging = false
@@ -40,10 +52,12 @@ export class DrawingManager {
     viewer: Cesium.Viewer,
     onSelectionChange: (sel: Selection | null) => void,
     onPinPlace: (point: LngLat) => void,
+    onEntityPick: (entity: PickedEntity | null) => void,
   ) {
     this.viewer = viewer
     this.onSelectionChange = onSelectionChange
     this.onPinPlace = onPinPlace
+    this.onEntityPick = onEntityPick
     this.drawDataSource = new Cesium.CustomDataSource('drawing')
     viewer.dataSources.add(this.drawDataSource)
     this.setupHandler()
@@ -53,9 +67,13 @@ export class DrawingManager {
     this.handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas)
 
     // LEFT DOWN — start drag (bbox) or add vertex (polygon/line) or place pin
+    // When mode is 'none', pick entities for the info box
     this.handler.setInputAction(
       (event: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
-        if (this.mode === 'none') return
+        if (this.mode === 'none') {
+          this.pickEntity(event.position)
+          return
+        }
         const cartesian = this.pickPosition(event.position)
         if (!cartesian) return
 
@@ -326,6 +344,57 @@ export class DrawingManager {
     if (!ray) return null
     const cartesian = this.viewer.scene.globe.pick(ray, this.viewer.scene)
     return cartesian ?? null
+  }
+
+  /** Pick a Cesium entity at screen position for the info box. */
+  private pickEntity(screenPos: Cesium.Cartesian2): void {
+    try {
+      const picked = this.viewer.scene.pick(screenPos)
+      if (!picked || !picked.id) {
+        this.onEntityPick(null)
+        return
+      }
+
+      const entity = picked.id as Cesium.Entity
+      if (!(entity instanceof Cesium.Entity)) {
+        this.onEntityPick(null)
+        return
+      }
+
+      const id = entity.id ?? ''
+      const name = entity.name ?? ''
+      const type = id.includes(':') ? id.split(':')[0] : 'entity'
+
+      // Extract position
+      let lng = 0, lat = 0, height = 0
+      if (entity.position) {
+        const pos = entity.position.getValue(this.viewer.clock.currentTime)
+        if (pos) {
+          const carto = Cesium.Cartographic.fromCartesian(pos)
+          lng = Cesium.Math.toDegrees(carto.longitude)
+          lat = Cesium.Math.toDegrees(carto.latitude)
+          height = carto.height
+        }
+      }
+
+      // Extract properties
+      const props: Record<string, unknown> = {}
+      if (entity.properties) {
+        const propertyNames = entity.properties.propertyNames
+        if (propertyNames) {
+          for (let i = 0; i < propertyNames.length; i++) {
+            const key = propertyNames[i]
+            const val = entity.properties[key]
+            props[key] = val?.getValue?.(this.viewer.clock.currentTime) ?? val
+          }
+        }
+      }
+
+      this.onEntityPick({ id, name, type, lng, lat, height, properties: props })
+    } catch {
+      this.onEntityPick(null)
+    }
+    this.requestRender()
   }
 
   private toLngLat(cartesian: Cesium.Cartesian3): LngLat | null {

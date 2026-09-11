@@ -168,8 +168,9 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
     }
   }
 
-  while (queue.length > 0) {
-    const i = queue.shift()!
+  let queueHead = 0
+  while (queueHead < queue.length) {
+    const i = queue[queueHead++]
     accumulation[i] += 1  // each cell contributes itself
     if (flowDir[i] < 0) continue
     const d = flowDir[i]

@@ -9,10 +9,12 @@ import DrawTools from './DrawTools'
 import PluginPanel from './plugins/PluginPanel'
 import InspectorPanel from './InspectorPanel'
 import StatusBar from './StatusBar'
+import EntityInfoBox from './EntityInfoBox'
 import { pluginManager } from './plugins'
 import type { PluginContext } from './plugins'
 import type { GIBSLayer, DrawMode, Selection, LngLat } from '@shared/types'
 import { selectionToBBox } from '@shared/types'
+import type { PickedEntity } from './DrawingManager'
 
 // ── Earth Engine v0.3 — cockpit windowing + plugin architecture ──
 
@@ -46,6 +48,9 @@ export default function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>('none')
   const [selection, setSelection] = useState<Selection | null>(null)
   const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
+
+  // ── Entity Info Box ──
+  const [pickedEntity, setPickedEntity] = useState<PickedEntity | null>(null)
 
   // ── Plugin state ──
   const [activePlugins, setActivePlugins] = useState<Set<string>>(new Set())
@@ -96,6 +101,21 @@ export default function App() {
       }
     }, 1000)
   }, [selection, lkpPin])
+
+  // Reset camera to north (heading=0, pitch=-90 top-down) keeping current position
+  const resetNorth = useCallback(() => {
+    if (!viewer || viewer.isDestroyed?.()) return
+    const cam = viewer.camera
+    viewer.camera.flyTo({
+      destination: cam.positionWC,
+      orientation: {
+        heading: 0,
+        pitch: Cesium.Math.toRadians(-90),
+        roll: 0,
+      },
+      duration: 0.6,
+    })
+  }, [viewer])
 
   // Apply opacity to base imagery
   useEffect(() => {
@@ -228,6 +248,7 @@ export default function App() {
         drawMode={drawMode}
         onSelectionChange={setSelection}
         onPinPlace={setLkpPin}
+        onEntityPick={setPickedEntity}
         selection={selection}
         lkpPin={lkpPin}
       />
@@ -247,7 +268,10 @@ export default function App() {
       {viewer && satellitesVisible && <SatelliteOverlay viewer={viewer} />}
 
       {/* HUD bar */}
-      <MemoHud viewport={hudViewport} imageryLayer={imageryLayer} />
+      <MemoHud viewport={hudViewport} imageryLayer={imageryLayer} onResetNorth={resetNorth} />
+
+      {/* Entity info box — appears when clicking on any entity */}
+      <EntityInfoBox entity={pickedEntity} onClose={() => setPickedEntity(null)} />
     </CockpitShell>
   )
 }

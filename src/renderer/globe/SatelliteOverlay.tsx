@@ -106,11 +106,12 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
       ;(orbitEntity.polyline as any).positions = new Cesium.ConstantProperty(orbitPositions)
     }, 60_000)
 
-    // Make sure Cesium's clock is at real-time and advancing
-    viewer.clock.currentTime = Cesium.JulianDate.fromDate(new Date())
+    // Don't override the clock here — the ISS position callback already
+    // reads from viewer.clock.currentTime, so it follows whatever clock
+    // mode is active (real-time by default, hillshade time when hillshade
+    // is enabled). This makes the ISS mirror the sun's orbital position.
     viewer.clock.clockRange = Cesium.ClockRange.UNBOUNDED
-    viewer.clock.multiplier = 1.0
-    viewer.clock.shouldAnimate = true
+    if (!viewer.clock.shouldAnimate) viewer.clock.shouldAnimate = true
 
     return () => {
       clearInterval(ringRefreshTimer)

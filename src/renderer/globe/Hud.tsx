@@ -1,9 +1,10 @@
 interface HudProps {
   viewport: unknown
   imageryLayer: string
+  onResetNorth?: () => void
 }
 
-export default function Hud({ viewport, imageryLayer }: HudProps) {
+export default function Hud({ viewport, imageryLayer, onResetNorth }: HudProps) {
   const vp = viewport as {
     center?: { lng: number; lat: number }
     height?: number
@@ -38,6 +39,11 @@ export default function Hud({ viewport, imageryLayer }: HudProps) {
       </div>
       <div style={hudStyle.right}>
         <span style={hudStyle.layer}>{imageryLayer.toUpperCase()}</span>
+        {onResetNorth && (
+          <button style={hudStyle.btn} onClick={onResetNorth} title="Reset camera to north (N)">
+            N
+          </button>
+        )}
       </div>
     </div>
   )
@@ -73,4 +79,20 @@ const hudStyle = {
   coord: { color: '#c0c8d0', fontSize: 11 },
   sep: { color: '#3a4a5a', margin: '0 4px' },
   layer: { color: '#6b7d92', fontSize: 10, letterSpacing: 1 },
+  btn: {
+    marginLeft: 8,
+    background: 'rgba(74, 158, 255, 0.15)',
+    border: '1px solid rgba(74, 158, 255, 0.4)',
+    color: '#4a9eff',
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+    fontSize: 12,
+    fontWeight: 'bold' as const,
+    padding: 0,
+    lineHeight: '20px',
+    transition: 'background 0.15s',
+  },
 }

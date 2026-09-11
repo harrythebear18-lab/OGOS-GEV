@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as Cesium from 'cesium'
 import { buildEsriProvider, buildGibsProvider, buildFlatTerrain, buildEsriTransportationProvider, buildEsriReferenceProvider } from './imageryProviders'
 import { DrawingManager } from './DrawingManager'
+import type { PickedEntity } from './DrawingManager'
 import type { GIBSLayer, DrawMode, Selection, LngLat } from '@shared/types'
 
 Cesium.Ion.defaultAccessToken = ''
@@ -20,6 +21,7 @@ interface GlobeProps {
   drawMode: DrawMode
   onSelectionChange: (sel: Selection | null) => void
   onPinPlace: (point: LngLat) => void
+  onEntityPick: (entity: PickedEntity | null) => void
   selection: Selection | null
   lkpPin: LngLat | null
 }
@@ -38,6 +40,7 @@ export default function Globe({
   drawMode,
   onSelectionChange,
   onPinPlace,
+  onEntityPick,
   selection,
   lkpPin,
 }: GlobeProps) {
@@ -293,7 +296,7 @@ export default function Globe({
       onViewerReady(v)
 
       // Create drawing manager for bbox/polygon/line selection
-      drawingRef.current = new DrawingManager(v, onSelectionChange, onPinPlace)
+      drawingRef.current = new DrawingManager(v, onSelectionChange, onPinPlace, onEntityPick)
       console.log('[Globe] DrawingManager created')
 
       console.log('[Globe] READY — viewer passed to parent')

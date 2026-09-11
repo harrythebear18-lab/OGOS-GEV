@@ -91,16 +91,16 @@ function createCockpitWindow(): BrowserWindow {
 
 console.log('[main] waiting for app.whenReady()...')
 
-// ── GPU ACCELERATION FLAGS FOR RTX 5060 BLACKWELL ──
-// Force GPU acceleration, disable software fallback
+// ── GPU ACCELERATION FLAGS ──
+// Keep GPU rasterization for Cesium performance, but avoid experimental
+// Vulkan/WebGPU which can crash unstable GPU drivers (BSOD).
 app.commandLine.appendSwitch('enable-gpu')
 app.commandLine.appendSwitch('enable-gpu-rasterization')
 app.commandLine.appendSwitch('enable-zero-copy')
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-native-gpu-memory-buffers')
-app.commandLine.appendSwitch('enable-features', 'Vulkan,WebGPU')
 ;(app as any).disableHardwareAcceleration = false
-console.log('[main] GPU flags set — rasterization, zero-copy, Vulkan, WebGPU')
+console.log('[main] GPU flags set — rasterization, zero-copy (Vulkan/WebGPU disabled for stability)')
 
 app.whenReady().then(() => {
   console.log('[main] app.whenReady() fired')

@@ -24,8 +24,10 @@ const OVERPASS_URLS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.openstreetmap.ru/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  'https://overpass.kumi.by/api/interpreter',
 ]
+
+/** Overpass servers reject requests without a proper User-Agent (return 406). */
+const USER_AGENT = 'OSINTSentinelWorkstation/0.1 (https://github.com/harrythebear18-lab/OGOS-GEV)'
 
 /**
  * Map OSM highway types to cost multipliers.
@@ -78,7 +80,10 @@ export async function fetchRoads(bounds: [LngLat, LngLat]): Promise<RoadResponse
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT,
+        },
         body: 'data=' + encodeURIComponent(query),
         signal: AbortSignal.timeout(25000),
       })

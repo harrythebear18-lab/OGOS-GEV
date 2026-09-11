@@ -15,7 +15,10 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
-import type { WaterResponse, WaterFeature } from '@shared/types'
+import type { WaterResponse, WaterFeature, BBox } from '@shared/types'
+
+const MIN_VISIBLE_ENTITIES = 2000
+const MAX_VISIBLE_ENTITIES = 50000
 
 export class WaterPlugin implements EarthEnginePlugin {
   id = 'water'
@@ -26,9 +29,10 @@ export class WaterPlugin implements EarthEnginePlugin {
   private dataSource: Cesium.CustomDataSource | null = null
   private ipc: typeof window.api | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
-  private features: WaterFeature[] = []
+  private allFeatures: WaterFeature[] = []
   private lastBbox: string | null = null
   private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
+  private lastViewBbox: string | null = null
   private show = true
   private lastError: string | null = null
 
@@ -45,8 +49,9 @@ export class WaterPlugin implements EarthEnginePlugin {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
-    this.features = []
+    this.allFeatures = []
     this.lastBbox = null
+    this.lastViewBbox = null
     this.viewer = null
     this.ipc = null
     this.status = { count: 0, status: 'disabled' }
@@ -54,19 +59,30 @@ export class WaterPlugin implements EarthEnginePlugin {
 
   update(ctx: PluginContext): void {
     const sceneCtx = ctx.sceneContext as any
-    const bbox = sceneCtx?.selectionBbox
-    if (!bbox) return
 
-    this.lastBboxParsed = bbox
+    // ── Fetch water when selection bbox changes ──
+    const selBbox = sceneCtx?.selectionBbox
+    if (selBbox) {
+      this.lastBboxParsed = selBbox
+      const bboxKey = `${selBbox.west.toFixed(2)},${selBbox.south.toFixed(2)},${selBbox.east.toFixed(2)},${selBbox.north.toFixed(2)}`
+      if (bboxKey !== this.lastBbox) {
+        this.lastBbox = bboxKey
+        const height = sceneCtx?.camera?.height
+        if (!height || height <= 500_000) {
+          this.fetchWater(selBbox)
+        }
+      }
+    }
 
-    const bboxKey = `${bbox.west.toFixed(2)},${bbox.south.toFixed(2)},${bbox.east.toFixed(2)},${bbox.north.toFixed(2)}`
-    if (bboxKey === this.lastBbox) return
-    this.lastBbox = bboxKey
-
-    const height = sceneCtx?.camera?.height
-    if (height && height > 500_000) return
-
-    this.fetchWater(bbox)
+    // ── Viewport culling: update visible entities on camera move ──
+    const viewBbox = sceneCtx?.bbox as BBox | undefined
+    if (viewBbox && this.allFeatures.length > 0) {
+      const viewKey = `${viewBbox.west.toFixed(3)},${viewBbox.south.toFixed(3)},${viewBbox.east.toFixed(3)},${viewBbox.north.toFixed(3)}`
+      if (viewKey !== this.lastViewBbox) {
+        this.lastViewBbox = viewKey
+        this.cullToViewport(viewBbox)
+      }
+    }
   }
 
   getStats(): PluginStats {
@@ -74,14 +90,16 @@ export class WaterPlugin implements EarthEnginePlugin {
   }
 
   getControls(): PluginControlSpec[] {
+    const rendered = this.dataSource?.entities.values.length ?? 0
     return [
       { type: 'toggle', id: 'visible', label: 'Visible', value: this.show },
       { type: 'button', id: 'run', label: 'Fetch Water', variant: 'primary' },
-      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.features.length === 0 },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.allFeatures.length === 0 },
       { type: 'separator', id: 'sep1' },
-      { type: 'display', id: 'rivers', label: 'Rivers/Streams', value: String(this.features.filter((f) => f.type === 'river' || f.type === 'stream').length), color: '#4a8aff' },
-      { type: 'display', id: 'lakes', label: 'Lakes/Ponds', value: String(this.features.filter((f) => f.type === 'lake' || f.type === 'pond' || f.type === 'reservoir').length), color: '#4affd4' },
-      { type: 'display', id: 'springs', label: 'Springs', value: String(this.features.filter((f) => f.type === 'spring').length), color: '#4aff8a' },
+      { type: 'display', id: 'rivers', label: 'Rivers/Streams', value: String(this.allFeatures.filter((f) => f.type === 'river' || f.type === 'stream').length), color: '#4a8aff' },
+      { type: 'display', id: 'lakes', label: 'Lakes/Ponds', value: String(this.allFeatures.filter((f) => f.type === 'lake' || f.type === 'pond' || f.type === 'reservoir').length), color: '#4affd4' },
+      { type: 'display', id: 'springs', label: 'Springs', value: String(this.allFeatures.filter((f) => f.type === 'spring').length), color: '#4aff8a' },
+      { type: 'display', id: 'rendered', label: 'Rendered', value: String(rendered), color: '#4affd4' },
       ...(this.lastError ? [{ type: 'display' as const, id: 'error', label: 'Error', value: this.lastError.slice(0, 60), color: '#ff4a4a' }] : []),
     ]
   }
@@ -97,14 +115,15 @@ export class WaterPlugin implements EarthEnginePlugin {
       }
     } else if (id === 'clear') {
       this.dataSource?.entities.removeAll()
-      this.features = []
+      this.allFeatures = []
       this.lastBbox = null
+      this.lastViewBbox = null
       this.status = { count: 0, status: 'nominal' }
     }
   }
 
   getFeatures(): WaterFeature[] {
-    return this.features
+    return this.allFeatures
   }
 
   private async fetchWater(bbox: { west: number; south: number; east: number; north: number }): Promise<void> {
@@ -121,19 +140,82 @@ export class WaterPlugin implements EarthEnginePlugin {
         return
       }
 
-      this.features = result.features
+      this.allFeatures = result.features
       this.lastError = result.error ?? null
       this.dataSource.entities.removeAll()
+      this.lastViewBbox = null  // force re-cull
 
-      for (const f of result.features) {
-        this.addWaterEntity(f)
-      }
+      // Initial cull using the fetch bbox as viewport
+      this.cullToViewport({
+        west: bbox.west, south: bbox.south, east: bbox.east, north: bbox.north,
+      })
 
       this.status = { count: result.features.length, status: 'nominal' }
     } catch (err) {
       console.warn('[water] fetch failed:', err)
       this.status = { ...this.status, status: 'error', error: String(err) }
     }
+  }
+
+  /** Cull features to viewport bbox — diff-based to avoid flicker. */
+  private cullToViewport(viewBbox: BBox): void {
+    if (!this.dataSource) return
+
+    // Dynamic cap: more entities when zoomed out
+    const camHeight = this.viewer?.camera?.positionCartographic?.height ?? 50000
+    const maxEntities = camHeight > 500_000 ? MAX_VISIBLE_ENTITIES
+      : camHeight > 100_000 ? 20000
+      : camHeight > 20_000 ? 8000
+      : MIN_VISIBLE_ENTITIES
+
+    const visibleIds = new Set<string>()
+    const toAdd: WaterFeature[] = []
+    let count = 0
+
+    for (const f of this.allFeatures) {
+      if (count >= maxEntities) break
+      if (this.featureIntersectsBbox(f, viewBbox)) {
+        visibleIds.add(f.id)
+        if (!this.dataSource.entities.getById(`water:${f.id}`)) {
+          toAdd.push(f)
+        }
+        count++
+      }
+    }
+
+    // Remove entities no longer visible
+    const toRemove: string[] = []
+    const existing = this.dataSource.entities.values
+    for (let i = 0; i < existing.length; i++) {
+      const e = existing[i]
+      const featId = e.id.startsWith('water:') ? e.id.slice(6) : e.id
+      if (!visibleIds.has(featId)) {
+        toRemove.push(e.id)
+      }
+    }
+    for (const id of toRemove) {
+      this.dataSource.entities.removeById(id)
+    }
+
+    // Add new entities
+    for (const f of toAdd) {
+      this.addWaterEntity(f)
+    }
+
+    this.dataSource.show = this.show
+    if (toAdd.length > 0 || toRemove.length > 0) {
+      try { this.viewer?.scene.requestRender() } catch {}
+    }
+  }
+
+  /** Quick bbox intersection test. */
+  private featureIntersectsBbox(f: WaterFeature, bbox: BBox): boolean {
+    for (const c of f.coords) {
+      if (c.lng >= bbox.west && c.lng <= bbox.east && c.lat >= bbox.south && c.lat <= bbox.north) {
+        return true
+      }
+    }
+    return false
   }
 
   private addWaterEntity(f: WaterFeature): void {

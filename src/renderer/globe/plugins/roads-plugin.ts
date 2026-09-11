@@ -10,13 +10,18 @@
  *  - path/footway/cycleway/track/bridleway      → thin green (trails)
  *  - steps/pedestrian                           → thin white (paths)
  *
- * This is the vector road network used by the route planner. It complements
- * the Esri imagery road overlay with actual OSM vector geometry.
+ * Viewport culling: only segments within the current camera view are
+ * rendered as Cesium entities. As the camera pans/zooms, entities are
+ * dynamically added/removed. This keeps GPU memory bounded regardless
+ * of bbox size — 50k roads in data, only ~1-2k rendered at any time.
  */
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
-import type { RoadResponse, RoadSegment } from '@shared/types'
+import type { RoadResponse, RoadSegment, BBox } from '@shared/types'
+
+const MIN_VISIBLE_ENTITIES = 2000
+const MAX_VISIBLE_ENTITIES = 50000
 
 export class RoadsPlugin implements EarthEnginePlugin {
   id = 'roads'
@@ -27,9 +32,10 @@ export class RoadsPlugin implements EarthEnginePlugin {
   private dataSource: Cesium.CustomDataSource | null = null
   private ipc: typeof window.api | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
-  private segments: RoadSegment[] = []
+  private allSegments: RoadSegment[] = []
   private lastBbox: string | null = null
   private lastBboxParsed: { west: number; south: number; east: number; north: number } | null = null
+  private lastViewBbox: string | null = null
   private visible = true
 
   async register(ctx: PluginContext): Promise<void> {
@@ -45,8 +51,9 @@ export class RoadsPlugin implements EarthEnginePlugin {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
-    this.segments = []
+    this.allSegments = []
     this.lastBbox = null
+    this.lastViewBbox = null
     this.viewer = null
     this.ipc = null
     this.status = { count: 0, status: 'disabled' }
@@ -54,19 +61,30 @@ export class RoadsPlugin implements EarthEnginePlugin {
 
   update(ctx: PluginContext): void {
     const sceneCtx = ctx.sceneContext as any
-    const bbox = sceneCtx?.selectionBbox
-    if (!bbox) return
 
-    this.lastBboxParsed = bbox
+    // ── Fetch roads when selection bbox changes ──
+    const selBbox = sceneCtx?.selectionBbox
+    if (selBbox) {
+      this.lastBboxParsed = selBbox
+      const bboxKey = `${selBbox.west.toFixed(2)},${selBbox.south.toFixed(2)},${selBbox.east.toFixed(2)},${selBbox.north.toFixed(2)}`
+      if (bboxKey !== this.lastBbox) {
+        this.lastBbox = bboxKey
+        const height = sceneCtx?.camera?.height
+        if (!height || height <= 500_000) {
+          this.fetchRoads(selBbox)
+        }
+      }
+    }
 
-    const bboxKey = `${bbox.west.toFixed(2)},${bbox.south.toFixed(2)},${bbox.east.toFixed(2)},${bbox.north.toFixed(2)}`
-    if (bboxKey === this.lastBbox) return
-    this.lastBbox = bboxKey
-
-    const height = sceneCtx?.camera?.height
-    if (height && height > 500_000) return
-
-    this.fetchRoads(bbox)
+    // ── Viewport culling: update visible entities on camera move ──
+    const viewBbox = sceneCtx?.bbox as BBox | undefined
+    if (viewBbox && this.allSegments.length > 0) {
+      const viewKey = `${viewBbox.west.toFixed(3)},${viewBbox.south.toFixed(3)},${viewBbox.east.toFixed(3)},${viewBbox.north.toFixed(3)}`
+      if (viewKey !== this.lastViewBbox) {
+        this.lastViewBbox = viewKey
+        this.cullToViewport(viewBbox)
+      }
+    }
   }
 
   getStats(): PluginStats {
@@ -74,12 +92,14 @@ export class RoadsPlugin implements EarthEnginePlugin {
   }
 
   getControls(): PluginControlSpec[] {
+    const rendered = this.dataSource?.entities.values.length ?? 0
     return [
       { type: 'toggle', id: 'visible', label: 'Visible', value: this.visible },
       { type: 'button', id: 'run', label: 'Fetch Roads', variant: 'primary' },
-      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.segments.length === 0 },
+      { type: 'button', id: 'clear', label: 'Clear', variant: 'danger', disabled: this.allSegments.length === 0 },
       { type: 'separator', id: 'sep1' },
-      { type: 'display', id: 'segments', label: 'Segments', value: String(this.segments.length), color: '#ffd24a' },
+      { type: 'display', id: 'total', label: 'Total Segments', value: String(this.allSegments.length), color: '#ffd24a' },
+      { type: 'display', id: 'rendered', label: 'Rendered', value: String(rendered), color: '#4aff8a' },
     ]
   }
 
@@ -94,14 +114,15 @@ export class RoadsPlugin implements EarthEnginePlugin {
       }
     } else if (id === 'clear') {
       this.dataSource?.entities.removeAll()
-      this.segments = []
+      this.allSegments = []
       this.lastBbox = null
+      this.lastViewBbox = null
       this.status = { count: 0, status: 'nominal' }
     }
   }
 
   getSegments(): RoadSegment[] {
-    return this.segments
+    return this.allSegments
   }
 
   private async fetchRoads(bbox: { west: number; south: number; east: number; north: number }): Promise<void> {
@@ -118,11 +139,15 @@ export class RoadsPlugin implements EarthEnginePlugin {
         return
       }
 
-      this.segments = result.segments
+      this.allSegments = result.segments
       this.dataSource.entities.removeAll()
+      this.lastViewBbox = null  // force re-cull
 
-      for (const seg of result.segments) {
-        this.addRoadEntity(seg)
+      // Initial cull — if we have a viewport bbox, use it; else render a capped subset
+      if (this.lastBboxParsed) {
+        this.cullToViewport({
+          west: bbox.west, south: bbox.south, east: bbox.east, north: bbox.north,
+        })
       }
 
       this.status = { count: result.segments.length, status: 'nominal' }
@@ -130,6 +155,70 @@ export class RoadsPlugin implements EarthEnginePlugin {
       console.warn('[roads] fetch failed:', err)
       this.status = { ...this.status, status: 'error', error: String(err) }
     }
+  }
+
+  /** Cull segments to viewport bbox — diff-based to avoid flicker. */
+  private cullToViewport(viewBbox: BBox): void {
+    if (!this.dataSource) return
+
+    // Dynamic cap: more entities when zoomed out (high altitude),
+    // fewer when zoomed in (where culling naturally limits count anyway)
+    const camHeight = this.viewer?.camera?.positionCartographic?.height ?? 50000
+    const maxEntities = camHeight > 500_000 ? MAX_VISIBLE_ENTITIES
+      : camHeight > 100_000 ? 20000
+      : camHeight > 20_000 ? 8000
+      : MIN_VISIBLE_ENTITIES
+
+    // Build set of segment IDs that should be visible
+    const visibleIds = new Set<string>()
+    const toAdd: RoadSegment[] = []
+    let count = 0
+
+    for (const seg of this.allSegments) {
+      if (count >= maxEntities) break
+      if (this.segmentIntersectsBbox(seg, viewBbox)) {
+        visibleIds.add(seg.id)
+        // Only add if not already rendered
+        if (!this.dataSource.entities.getById(`road:${seg.id}`)) {
+          toAdd.push(seg)
+        }
+        count++
+      }
+    }
+
+    // Remove entities that are no longer visible
+    const toRemove: string[] = []
+    const existing = this.dataSource.entities.values
+    for (let i = 0; i < existing.length; i++) {
+      const e = existing[i]
+      const segId = e.id.startsWith('road:') ? e.id.slice(5) : e.id
+      if (!visibleIds.has(segId)) {
+        toRemove.push(e.id)
+      }
+    }
+    for (const id of toRemove) {
+      this.dataSource.entities.removeById(id)
+    }
+
+    // Add new entities
+    for (const seg of toAdd) {
+      this.addRoadEntity(seg)
+    }
+
+    this.dataSource.show = this.visible
+    if (toAdd.length > 0 || toRemove.length > 0) {
+      try { this.viewer?.scene.requestRender() } catch {}
+    }
+  }
+
+  /** Quick bbox intersection test — check if any coord falls within the bbox. */
+  private segmentIntersectsBbox(seg: RoadSegment, bbox: BBox): boolean {
+    for (const c of seg.coords) {
+      if (c.lng >= bbox.west && c.lng <= bbox.east && c.lat >= bbox.south && c.lat <= bbox.north) {
+        return true
+      }
+    }
+    return false
   }
 
   private addRoadEntity(seg: RoadSegment): void {

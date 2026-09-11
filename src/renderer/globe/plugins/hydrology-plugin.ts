@@ -178,6 +178,7 @@ export class HydrologyPlugin implements EarthEnginePlugin {
         return
       }
 
+      if (!this.runoffSource) { this.isRunning = false; return }
       this.runoffSource.entities.removeAll()
       this.maxDischargeLps = 0
 

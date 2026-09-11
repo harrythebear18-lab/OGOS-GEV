@@ -122,6 +122,7 @@ export class CanopyPlugin implements EarthEnginePlugin {
       }
 
       this.cells = result.zones
+      if (!this.dataSource) { this.status = { count: 0, status: 'nominal' }; return }
       this.dataSource.entities.removeAll()
 
       // Count zone types

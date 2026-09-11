@@ -117,6 +117,7 @@ export class AnomalyPlugin implements EarthEnginePlugin {
       }
 
       this.zones = result.zones
+      if (!this.dataSource) { this.status = { count: 0, status: 'nominal' }; return }
       this.dataSource.entities.removeAll()
 
       for (const zone of result.zones) {
@@ -137,18 +138,46 @@ export class AnomalyPlugin implements EarthEnginePlugin {
     // Depressions = blue (holes, caves, craters)
     // Prominences = orange (spires, towers, peaks)
     const color = zone.type === 'depression'
-      ? Cesium.Color.fromBytes(74, 138, 255, 140)
-      : Cesium.Color.fromBytes(255, 138, 74, 140)
+      ? Cesium.Color.fromBytes(74, 138, 255, 255)
+      : Cesium.Color.fromBytes(255, 138, 74, 255)
 
-    const alpha = Math.round((0.3 + zone.strength * 0.5) * 255)
+    // Outline ring only — no fill, so terrain stays visible
+    this.dataSource.entities.add({
+      id: `anomaly-ring:${zone.id}`,
+      polyline: {
+        positions: new Cesium.ConstantProperty([...positions, positions[0]]),
+        width: new Cesium.ConstantProperty(2.5),
+        material: new Cesium.ColorMaterialProperty(color.withAlpha(0.9)),
+        clampToGround: true,
+      },
+      properties: { type: zone.type, strength: zone.strength, sizeM: zone.sizeM },
+    } as any)
+
+    // Center marker — small crosshair point so the anomaly is easy to spot
+    let cx = 0, cy = 0
+    for (const c of zone.coords) { cx += c.lng; cy += c.lat }
+    cx /= zone.coords.length
+    cy /= zone.coords.length
 
     this.dataSource.entities.add({
-      id: `anomaly:${zone.id}`,
-      polygon: {
-        hierarchy: new Cesium.PolygonHierarchy(positions),
-        material: new Cesium.ColorMaterialProperty(color.withAlpha(alpha / 255)),
-        outline: true,
-        outlineColor: new Cesium.ConstantProperty(color),
+      id: `anomaly-marker:${zone.id}`,
+      position: Cesium.Cartesian3.fromDegrees(cx, cy),
+      point: {
+        pixelSize: new Cesium.ConstantProperty(6),
+        color: new Cesium.ConstantProperty(color),
+        outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
+        outlineWidth: new Cesium.ConstantProperty(2),
+        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
+      },
+      label: {
+        text: zone.type === 'depression' ? 'DEP' : 'PRO',
+        font: '9px monospace',
+        fillColor: new Cesium.ConstantProperty(color),
+        outlineColor: new Cesium.ConstantProperty(Cesium.Color.BLACK),
+        outlineWidth: new Cesium.ConstantProperty(2),
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        pixelOffset: new Cesium.Cartesian2(0, -14),
+        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       properties: { type: zone.type, strength: zone.strength, sizeM: zone.sizeM },
     } as any)

@@ -115,6 +115,12 @@ export class SlopeBandsPlugin implements EarthEnginePlugin {
         return
       }
 
+      // Re-check after async — plugin may have been deactivated during fetch
+      if (!this.dataSource) {
+        this.status = { count: 0, status: 'nominal' }
+        return
+      }
+
       // Clear old bands
       this.dataSource.entities.removeAll()
       this.currentBands = result.bands
