@@ -120,7 +120,7 @@ register / unregister / update / getStats / getControls / onControl.
 | 1 — World Intelligence | globe | Weather, Earthquakes, Slope, Hydrology, Water, Roads, Anomaly |
 | 2 — Movement & Behaviour | analysis | Routes, Canopy, Behavior, Search Zones, Rest Points, Fall Risk, Remains Corridor, Case Profiles, Hiker Profile |
 | 3 — Live Feeds | live | Fires, Aircraft, Vessels, Lightning, Satellites |
-| 3b — Climate & Ocean | climate | Climate Stations, Storms, Space Weather |
+| 3b — Climate & Ocean | climate | Climate Stations (Buoys, Argo, Currents), Storms, Space Weather |
 | 3c — Infrastructure | infrastructure | Grid Assets, Network |
 | 4 — AI & Vision | ai | CLIP, Vision, Web Search, Detection Overlay, Predictions |
 | 5 — Mission Logic | export | Export/Import (GeoJSON/KML/KMZ) |

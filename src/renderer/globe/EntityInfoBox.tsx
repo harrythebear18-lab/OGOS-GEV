@@ -67,7 +67,18 @@ function formatProperty(key: string, value: unknown): string {
     if (key === 'pressureMB') return `${value.toFixed(0)} mb`
     if (key === 'waterTemp' || key === 'airTemp') return `${value.toFixed(1)} °C`
     if (key === 'windSpeed') return `${value.toFixed(1)} m/s`
+    if (key === 'windDir') return `${value.toFixed(0)}°`
+    if (key === 'waveHeight') return `${value.toFixed(1)} m`
+    if (key === 'wavePeriod') return `${value.toFixed(1)} s`
     if (key === 'pressure') return `${value.toFixed(1)} hPa`
+    if (key === 'salinity') return `${value.toFixed(2)} PSU`
+    if (key === 'co2') return `${value.toFixed(1)} ppm`
+    if (key === 'currentSpeed') return `${value.toFixed(2)} m/s`
+    if (key === 'currentDir') return `${value.toFixed(0)}°`
+    if (key === 'depth') return typeof value === 'number' && value > 1000 ? `${(value / 1000).toFixed(1)} km` : `${value.toFixed(1)} m`
+    if (key === 'oxygen') return `${value.toFixed(1)} µmol/kg`
+    if (key === 'ph') return `${value.toFixed(2)}`
+    if (key === 'trajectoryPoints') return `${value} pts`
     if (key === 'anomaly') return `${value.toFixed(2)} °C`
     return String(value)
   }
@@ -84,7 +95,9 @@ const PRIORITY_KEYS = [
   'velocity', 'heading', 'altitude', 'speed', 'depth',
   'windSpeedKt', 'pressureMB', 'classification', 'intensity',
   'type', 'source', 'capacityMw', 'outputMw', 'voltageKv', 'energyType', 'owner', 'active',
-  'waterTemp', 'airTemp', 'windSpeed', 'pressure', 'salinity',
+  'waterTemp', 'airTemp', 'windSpeed', 'windDir', 'waveHeight', 'wavePeriod',
+  'pressure', 'salinity', 'co2', 'currentSpeed', 'currentDir', 'depth',
+  'oxygen', 'ph', 'hasTrajectory', 'trajectoryPoints',
   'severity', 'confidence', 'description',
   'ip', 'port', 'country', 'city', 'process',
   'time', 'acqTime',

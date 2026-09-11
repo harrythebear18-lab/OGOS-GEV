@@ -371,6 +371,8 @@ export class ErddapFetcher {
     ]
 
     const seenFloats = new Set<string>()
+    // Collect trajectory points per float for drift trail visualization
+    const trajectories = new Map<string, { lat: number; lon: number; timestamp: number }[]>()
     let fetched = false
 
     for (const server of ARGO_SERVERS) {
@@ -406,6 +408,13 @@ export class ErddapFetcher {
                 lastUpdate: ts,
                 active: true,
               })
+              trajectories.set(id, [])
+            }
+
+            // Collect trajectory points (limit to last 30 per float to bound memory)
+            const traj = trajectories.get(id)!
+            if (traj.length < 30) {
+              traj.push({ lat, lon, timestamp: ts })
             }
 
             measurements[id] = {
@@ -414,6 +423,13 @@ export class ErddapFetcher {
               waterTemp: safeNum(get(row, server.tempField)),
               salinity: safeNum(get(row, server.psalField)),
               depth: safeNum(get(row, server.presField)),
+            }
+          }
+
+          // Attach trajectories to measurements
+          for (const [id, traj] of trajectories) {
+            if (measurements[id] && traj.length >= 2) {
+              measurements[id].trajectory = traj
             }
           }
 

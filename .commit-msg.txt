@@ -1,24 +1,26 @@
-Port missing OGOS features: GIBS layers, elevation profile, hypotheses, integrity panel, privacy mode, per-layer clear, PNG export, memory tiers
+Visualize ocean currents and Argo drift trails on climate stations
 
-- Add 6 missing GIBS layers: MODIS NDVI 16-day, LST Day, Sentinel-2 Mosaic 20m,
-  GOES-East, Himawari-8, Meteosat-11 (now 12 total, matching OGOS)
-- Add ElevationProfile SVG chart component — renders elevation vs distance
-  with ascent/descent/slope stats when a line is drawn on the globe
-- Add Hypotheses tab to AI panel — generates structured search priorities
-  with confidence levels and suggested zones via Ollama
-- Add ClimateIntegrityPanel — floating panel showing integrity score gauge,
-  check summary (passed/warn/failed), space weather status, live feed counts
-- Add privacy mode to network plugin — masks IPs, hostnames, process names,
-  and city names; toggleable via plugin control (ON by default)
-- Add per-layer clear buttons — ✕ button on each plugin card header that
-  calls plugin.clear() to remove rendered entities without deactivating
-- Add clear() method to EarthEnginePlugin interface + roads/water/infra plugins
-- Add PNG/screenshot export — captures Cesium canvas and saves via IPC
-  (EXPORT_PNG channel + preload files.exportPNG)
-- Add platform-aware memory tiers — V8 heap limits via --max-old-space-size
-  based on platform + RAM (4 tiers: Mac low/high, Windows low/high)
-- Update ollama-service to use full platform-aware tier system
-- Add climate namespace to globals.d.ts type definitions
+- Add trajectory field to ClimateMeasurement type for Argo drift history
+- Update erddap-fetcher Argo fetcher to collect last 30 positions per float
+  (capped at 30 points per float to bound memory)
+- Rewrite climate-stations plugin with full visualization:
+  - Current vector arrows for TAO current stations (speed-scaled, color-coded)
+  - Argo drift trail polylines (glowing lines showing recent positions)
+  - Arrowhead points at current vector tips
+  - Larger point size for Argo floats vs static buoys
+  - disableDepthTestDistance for better visibility at distance
+- Expose full measurement fields in entity properties:
+  waterTemp, airTemp, windSpeed, windDir, waveHeight, wavePeriod,
+  pressure, salinity, co2, currentSpeed, currentDir, depth, oxygen, ph,
+  hasTrajectory, trajectoryPoints
+- Add plugin controls: toggle current arrows, toggle drift trails,
+  display counts for Argo floats and current sensors
+- Add clear() method for per-layer clear button
+- Update EntityInfoBox formatters for new fields:
+  windDir (°), waveHeight (m), wavePeriod (s), salinity (PSU),
+  co2 (ppm), currentSpeed (m/s), currentDir (°), depth (m/km),
+  oxygen (µmol/kg), ph, trajectoryPoints (pts)
+- Update README climate tier description
 
 Generated with [Devin](https://devin.ai)
 

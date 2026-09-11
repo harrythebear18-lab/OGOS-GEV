@@ -692,6 +692,8 @@ export interface ClimateMeasurement {
   oxygen?: number
   nitrate?: number
   ph?: number
+  /** Argo drift trajectory — recent positions for drift trail visualization */
+  trajectory?: { lat: number; lon: number; timestamp: number }[]
 }
 
 export interface ClimateStats {
