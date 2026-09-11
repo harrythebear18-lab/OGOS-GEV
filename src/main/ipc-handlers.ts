@@ -218,8 +218,8 @@ export function registerIpcHandlers(): void {
 
   // Chat with tools (streaming via IPC events)
   ipcMain.handle(IPC.AI_CHAT, async (_event, args) => {
-    const { sessionId, prompt, image, model, mode } = args
-    const result = await chatWithTools(sessionId, prompt, { image, model, mode })
+    const { sessionId, prompt, image, model, mode, privacyMode } = args
+    const result = await chatWithTools(sessionId, prompt, { image, model, mode, privacyMode })
     return result
   })
 
@@ -306,7 +306,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.WEB_SEARCH, async (_event, args) => {
     console.log('[ipc] WEB_SEARCH:', args)
     const ctx = getSceneContext()
-    const location = ctx.lkp ?? ctx.camera?.center ?? undefined
+    const privacyMode = args.privacyMode === true
+    let location = ctx.lkp ?? ctx.camera?.center ?? undefined
+    if (privacyMode && location) {
+      // Coarsen to ~1 degree (~111km) — no reverse geocode leak
+      location = {
+        lng: Math.round(location.lng),
+        lat: Math.round(location.lat),
+      }
+    }
     return webSearch(args, location)
   })
 

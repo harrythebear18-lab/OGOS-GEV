@@ -33,9 +33,10 @@ interface Hypothesis {
 interface AiPanelProps {
   viewer: Cesium.Viewer | null
   onHypothesesChange?: (hypotheses: Hypothesis[]) => void
+  privacyMode?: boolean
 }
 
-export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
+export default function AiPanel({ viewer, onHypothesesChange, privacyMode }: AiPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -166,7 +167,7 @@ export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
     setStreamingText('')
 
     try {
-      const result = await window.api.ai.chat(sessionId, userText, { model: model || undefined, mode: analysisMode })
+      const result = await window.api.ai.chat(sessionId, userText, { model: model || undefined, mode: analysisMode, privacyMode: privacyMode ?? true })
       // The stream handler will add the assistant message via 'done' event
       // But if streaming didn't produce tokens, add the result here
       if (result?.error) {
@@ -193,7 +194,7 @@ export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
       const canvas = viewer.canvas as HTMLCanvasElement
       const dataUrl = canvas.toDataURL('image/png')
 
-      const result = await window.api.ai.chat(sessionId, userText, { image: dataUrl, model: model || undefined, mode: analysisMode })
+      const result = await window.api.ai.chat(sessionId, userText, { image: dataUrl, model: model || undefined, mode: analysisMode, privacyMode: privacyMode ?? true })
       if (result?.error) {
         setMessages((m) => [...m, { id: nextId(), role: 'assistant', content: result.error || 'Unknown error', error: true }])
         setLoading(false)
@@ -231,7 +232,7 @@ For each, provide:
 - suggestedZones: array of { label, confidence (0-100), coords: [{lng,lat},...], reasons: [string] }
 
 Format as JSON array. Use approximate viewport coordinates for zone polygons.`
-      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined, mode: analysisMode }) as { response?: string; error?: string }
+      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined, mode: analysisMode, privacyMode: privacyMode ?? true }) as { response?: string; error?: string }
 
       if (result?.error) {
         console.warn('[AiPanel] hypothesis generation failed:', result.error)

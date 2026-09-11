@@ -168,8 +168,8 @@ const api = {
     getSession: (sessionId: string) => ipcRenderer.invoke('ai:session:get', { sessionId }),
 
     // Chat with tools (streaming via ai:chat:stream events)
-    chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research' }) =>
-      ipcRenderer.invoke(IPC.AI_CHAT, { sessionId, prompt, image: opts?.image, model: opts?.model, mode: opts?.mode }),
+    chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research'; privacyMode?: boolean }) =>
+      ipcRenderer.invoke(IPC.AI_CHAT, { sessionId, prompt, image: opts?.image, model: opts?.model, mode: opts?.mode, privacyMode: opts?.privacyMode }),
 
     // Vision (one-shot viewport analysis)
     vision: (prompt: string, image: string, model?: string) =>
@@ -198,8 +198,8 @@ const api = {
     clipHealth: () => ipcRenderer.invoke(IPC.AI_CLIP_HEALTH),
     clipSearch: (query: string, bounds?: unknown) =>
       ipcRenderer.invoke(IPC.AI_CLIP_SEARCH, { query, bounds }),
-    webSearch: (query: string, limit?: number) =>
-      ipcRenderer.invoke(IPC.WEB_SEARCH, { query, limit }),
+    webSearch: (query: string, limit?: number, privacyMode?: boolean) =>
+      ipcRenderer.invoke(IPC.WEB_SEARCH, { query, limit, privacyMode }),
   },
 
   /* ── Export / Import / Case profiles ── */

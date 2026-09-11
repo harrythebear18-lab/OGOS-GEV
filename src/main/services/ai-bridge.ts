@@ -31,6 +31,7 @@ export interface AISession {
   visionModel: string
   createdAt: number
   streaming: boolean
+  privacyMode?: boolean
 }
 
 const sessions = new Map<string, AISession>()
@@ -113,16 +114,28 @@ const WEB_SEARCH_TOOL: ToolDefinition = {
   },
 }
 
+// Track current session's privacy mode so tool handlers can respect it
+let currentPrivacyMode = false
+
+export function getCurrentPrivacyMode(): boolean {
+  return currentPrivacyMode
+}
+
 async function handleWebSearch(args: Record<string, unknown>): Promise<unknown> {
   const query = String(args.query || '')
   const limit = Number(args.limit) || 5
   if (!query) return { error: 'No query provided' }
 
   const ctx = getSceneContext()
-  // Use bbox center if available, otherwise camera center or LKP
-  const location = ctx.bbox
+  let location = ctx.bbox
     ? { lng: (ctx.bbox.west + ctx.bbox.east) / 2, lat: (ctx.bbox.south + ctx.bbox.north) / 2 }
     : ctx.lkp ?? ctx.camera?.center ?? undefined
+
+  // Coarsen location if privacy mode is on
+  if (currentPrivacyMode && location) {
+    location = { lng: Math.round(location.lng), lat: Math.round(location.lat) }
+  }
+
   const results = await webSearch({ query, limit }, location)
   return results
 }
@@ -198,7 +211,7 @@ function streamError(sessionId: string, error: string): void {
 export async function chatWithTools(
   sessionId: string,
   userMessage: string,
-  options?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research' }
+  options?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research'; privacyMode?: boolean }
 ): Promise<{ content: string; error?: string }> {
   const session = getSession(sessionId)
   if (!session) return { content: '', error: 'Session not found' }
@@ -210,6 +223,9 @@ export async function chatWithTools(
   session.streaming = true
   const mode = options?.mode || 'active-sar'
   const isActiveSAR = mode === 'active-sar'
+  const privacy = options?.privacyMode ?? false
+  session.privacyMode = privacy
+  currentPrivacyMode = privacy
 
   try {
     // Build system prompt with current scene context (bbox-aware)
@@ -230,25 +246,65 @@ export async function chatWithTools(
       const heightDeg = b.north - b.south
       const approxKm = Math.max(widthDeg, heightDeg) * 111
 
-      bboxDesc = `Viewport bbox: ${b.west.toFixed(3)}, ${b.south.toFixed(3)} to ${b.east.toFixed(3)}, ${b.north.toFixed(3)}
+      if (privacy) {
+        // Privacy ON — coarsen coordinates to ~1 degree (~111km) and skip reverse geocode
+        const coarseLat = Math.round(centerLat)
+        const coarseLng = Math.round(centerLng)
+        bboxDesc = `Viewport bbox: approx ${coarseLng - 1}° to ${coarseLng + 1}°, ${coarseLat - 1}° to ${coarseLat + 1}°`
+        locationDesc = `Location: approx region near ${coarseLat}°, ${coarseLng}° (coarsened for privacy)`
+        placeName = null
+      } else {
+        bboxDesc = `Viewport bbox: ${b.west.toFixed(3)}, ${b.south.toFixed(3)} to ${b.east.toFixed(3)}, ${b.north.toFixed(3)}
 Viewport center: ${centerLng.toFixed(4)}, ${centerLat.toFixed(4)}
 Viewport size: ~${widthDeg.toFixed(2)}° × ${heightDeg.toFixed(2)}° (~${approxKm.toFixed(0)} km)`
 
-      // Try reverse geocode for a human-readable place name
-      try {
-        placeName = await reverseGeocode(centerLng, centerLat)
-      } catch {
-        placeName = null
-      }
+        // Try reverse geocode for a human-readable place name
+        try {
+          placeName = await reverseGeocode(centerLng, centerLat)
+        } catch {
+          placeName = null
+        }
 
-      locationDesc = placeName
-        ? `Location: ${placeName} (center: ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)})`
-        : `Location: center at ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)}`
+        locationDesc = placeName
+          ? `Location: ${placeName} (center: ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)})`
+          : `Location: center at ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)}`
+      }
     } else if (ctx.camera?.center) {
-      locationDesc = `Location: camera at ${ctx.camera.center.lat.toFixed(4)}, ${ctx.camera.center.lng.toFixed(4)} (height: ${ctx.camera.height.toFixed(0)}m)`
+      if (privacy) {
+        locationDesc = `Location: approx region (coarsened for privacy)`
+      } else {
+        locationDesc = `Location: camera at ${ctx.camera.center.lat.toFixed(4)}, ${ctx.camera.center.lng.toFixed(4)} (height: ${ctx.camera.height.toFixed(0)}m)`
+      }
     }
 
-    const ctxStr = JSON.stringify(ctx, null, 2)
+    // Coarsen scene context JSON when privacy is on — strip exact coordinates
+    let ctxStr: string
+    if (privacy) {
+      const coarsened = { ...ctx }
+      if (coarsened.bbox) {
+        const cLat = Math.round((coarsened.bbox.south + coarsened.bbox.north) / 2)
+        const cLng = Math.round((coarsened.bbox.west + coarsened.bbox.east) / 2)
+        coarsened.bbox = { west: cLng - 1, south: cLat - 1, east: cLng + 1, north: cLat + 1 }
+      }
+      if (coarsened.camera?.center) {
+        coarsened.camera = {
+          ...coarsened.camera,
+          center: {
+            lat: Math.round(coarsened.camera.center.lat),
+            lng: Math.round(coarsened.camera.center.lng),
+          },
+        }
+      }
+      if (coarsened.lkp) {
+        coarsened.lkp = {
+          lat: Math.round(coarsened.lkp.lat),
+          lng: Math.round(coarsened.lkp.lng),
+        }
+      }
+      ctxStr = JSON.stringify(coarsened, null, 2)
+    } else {
+      ctxStr = JSON.stringify(ctx, null, 2)
+    }
 
     // Mode-aware system prompt (ported from OGOS buildSystemPrompt)
     const modeHeader = isActiveSAR
@@ -293,7 +349,18 @@ ${placeName ? `Place name: ${placeName}` : ''}
 ${bboxDesc}
 
 ${reasoningStyle}
-
+${privacy ? `
+## PRIVACY MODE — STRICT RULES
+The user has privacy mode enabled. You MUST follow these rules absolutely:
+- NEVER say "your location", "you are near", "from your position", "the area you're looking at is close to", or any phrase that implies the user is at or near the viewport location.
+- The user is LOCATIONLESS. The viewport is a region they are ANALYZING, not where they ARE.
+- Refer to the viewport as "the selected region", "the analysis area", "this region", or "the area in view" — never as "your area" or "where you are".
+- You may still answer questions about the region (weather, terrain, news, hazards) but must frame it as analysis of a place, not the user's location.
+- Example CORRECT: "The selected region appears to be northeast Brazil. Current weather shows..."
+- Example WRONG: "You are looking at northeast Brazil." or "Your location is near..."
+- Do NOT infer or guess the user's actual location from the viewport, LKP, or camera position.
+- If the user asks "where am I", respond that privacy mode is on and you cannot determine their location.
+` : ''}
 Full scene context:
 ${ctxStr}
 

@@ -249,7 +249,7 @@ export default function App() {
         />
       }
       aiPanel={
-        <AiPanel viewer={viewer} onHypothesesChange={setHypotheses} />
+        <AiPanel viewer={viewer} onHypothesesChange={setHypotheses} privacyMode={privacyMode} />
       }
       statusBar={
         <MemoStatusBar

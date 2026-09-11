@@ -1,28 +1,21 @@
-Simulate missing data sources + upgrade HUD with MGRS/GSD/NIIRS/classification
+AI + web search respect privacy mode — user is locationless when privacy ON
 
-BGC-Argo simulator (no external fetch — derives from existing Argo data):
-- Oxygen: Garcia & Gordon (1992) solubility model (T, S, depth)
-- Chlorophyll: latitude/season/basin model (polar bloom, oligotrophic gyres,
-  upwelling zones)
-- Nitrate: depth + latitude model (deep/high-lat = high nitrate)
-- pH: thermodynamic from T and S
-- 583 BGC floats derived from 4049 Argo floats (15% BGC-equipped ratio)
-- Pacific OMZ (eastern equatorial) modeled with low O2
+When privacy mode is ON:
+- AI system prompt includes strict PRIVACY MODE rules:
+  - Never say "your location", "you are near", "from your position"
+  - User is LOCATIONLESS — viewport is a region being ANALYZED, not where they ARE
+  - Refer to viewport as "the selected region", not "your area"
+  - Still answers questions about the region but frames as analysis, not identity
+  - If user asks "where am I", responds that privacy mode is on
+- Scene context JSON is coarsened to ~1 degree (~111km) resolution
+- Location description shows "approx region near X°, Y° (coarsened for privacy)"
+- Reverse geocode (place name lookup) is skipped entirely
+- Web search tool handler coarsens location to whole degrees
+- Web search IPC handler coarsens location when privacyMode flag is passed
 
-Aircraft metadata enrichment (no external fetch — derives from callsign/ICAO24):
-- ICAO24 hex → country of registration (ICAO allocation ranges)
-- Callsign prefix → airline operator (50+ IATA codes)
-- Callsign pattern → flight type (commercial, cargo, military, GA)
-- Altitude/velocity → flight phase (parked, taxi, takeoff, climb, cruise,
-  descent, approach, landed)
-- ICAO24 + country → pseudo-registration (N-, G-, F-, D-, C-F, VH-, JA-, etc.)
-- Track history: in-memory trail per ICAO24 (30 points, 30-min TTL)
-
-HUD upgrade (ported from GEV concept):
-- MGRS (Military Grid Reference System) coordinate readout
-- GSD (Ground Sample Distance) — sensor resolution at current altitude
-- NIIRS (National Imagery Interpretability Rating Scale) — image quality
-- Classification banners (top + bottom: UNCLASSIFIED // REL TO FVEY)
+Privacy mode flows through:
+  PrivacyToggle → App.tsx → AiPanel → ai.chat({privacyMode}) → IPC → chatWithTools({privacyMode})
+  → system prompt + context coarsening + web search tool coarsening
 
 Generated with [Devin](https://devin.ai)
 
