@@ -218,8 +218,8 @@ export function registerIpcHandlers(): void {
 
   // Chat with tools (streaming via IPC events)
   ipcMain.handle(IPC.AI_CHAT, async (_event, args) => {
-    const { sessionId, prompt, image, model } = args
-    const result = await chatWithTools(sessionId, prompt, { image, model })
+    const { sessionId, prompt, image, model, mode } = args
+    const result = await chatWithTools(sessionId, prompt, { image, model, mode })
     return result
   })
 
@@ -437,6 +437,9 @@ export function registerIpcHandlers(): void {
       stats: { totalStations: stations.length, activeStations: stations.filter((s) => s.active).length, invalidatedStations: 0, byType: {}, bySource: {} },
       timestamp: Date.now(),
     }
+  })
+  ipcMain.handle(IPC.CLIMATE_INTEGRITY_GET_CURRENT, () => {
+    return climateMonitor.getLastIntegrity?.() ?? null
   })
   ipcMain.handle(IPC.PREDICTION_GET_CURRENT, () => {
     return predictionEngine.getLastUpdate()

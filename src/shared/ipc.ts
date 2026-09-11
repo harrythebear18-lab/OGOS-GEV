@@ -53,6 +53,7 @@ export const IPC = {
 
   // Climate / Ocean (pushed from main to renderer)
   CLIMATE_INTEGRITY: 'climate:integrity',
+  CLIMATE_INTEGRITY_GET_CURRENT: 'climate:integrity:get-current',
   CLIMATE_ALERT: 'climate:alert',
   CLIMATE_TRAFFIC: 'climate:traffic',
   CLIMATE_SET_VIEWPORT: 'climate:set-viewport',

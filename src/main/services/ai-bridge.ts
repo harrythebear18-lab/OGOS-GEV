@@ -198,7 +198,7 @@ function streamError(sessionId: string, error: string): void {
 export async function chatWithTools(
   sessionId: string,
   userMessage: string,
-  options?: { image?: string; model?: string }
+  options?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research' }
 ): Promise<{ content: string; error?: string }> {
   const session = getSession(sessionId)
   if (!session) return { content: '', error: 'Session not found' }
@@ -208,6 +208,8 @@ export async function chatWithTools(
   }
 
   session.streaming = true
+  const mode = options?.mode || 'active-sar'
+  const isActiveSAR = mode === 'active-sar'
 
   try {
     // Build system prompt with current scene context (bbox-aware)
@@ -248,7 +250,37 @@ Viewport size: ~${widthDeg.toFixed(2)}° × ${heightDeg.toFixed(2)}° (~${approx
 
     const ctxStr = JSON.stringify(ctx, null, 2)
 
-    const systemPrompt = `You are an analyst embedded in a geospatial intelligence workstation with a 3D Cesium globe.
+    // Mode-aware system prompt (ported from OGOS buildSystemPrompt)
+    const modeHeader = isActiveSAR
+      ? 'You are the AI analyst embedded in OSINT Sentinel Workstation, operating in ACTIVE SAR MODE. A real, time-critical search-and-rescue operation is underway.'
+      : 'You are the AI analyst embedded in OSINT Sentinel Workstation, operating in LEGACY / RESEARCH MODE. This is a historical, cold-case, or exploratory terrain investigation.'
+
+    const reasoningStyle = isActiveSAR
+      ? `## ACTIVE SAR MODE — Reasoning Style
+- The LKP is real and recent. Time since last seen is CRITICAL.
+- Movement modelling matters. Use trip parameters aggressively.
+- Hydrology, weather alerts, and hazard zones are CRITICAL safety factors.
+- Search zones must be TIGHT and evidence-driven. Avoid wide-area speculation.
+- The bounding box is NOT the primary frame — LKP -> corridor -> zones is.
+- Be conservative. Prioritise safety-critical information.
+- Avoid speculation. Use high-confidence reasoning only.
+- Suggest immediate, actionable tools. Time matters.
+- Generate SAR-style hypotheses: 2-3 tight zones, high confidence, clear evidence chains.
+- Tool priority: run_search_zones -> run_rest_points -> run_fall_risk -> run_route.`
+      : `## LEGACY / RESEARCH MODE — Reasoning Style
+- The LKP may be approximate or estimated. Do NOT over-rely on it.
+- Time since last seen is contextual, not critical.
+- Movement modelling is optional. The bounding box is the PRIMARY frame.
+- Weather is contextual, not critical. Use it for terrain understanding.
+- Speculation is ALLOWED and encouraged — this is exploratory.
+- Pull more external data. Multi-source search matters (web_search, vision, CLIP).
+- Look for terrain anomalies, pattern analysis, and historical context.
+- Use bbox-spread analysis instead of tight LKP corridors.
+- Do NOT assume the person is alive or moving. Consider all scenarios.
+- Generate exploratory hypotheses: 4-6 wide zones, alternative theories, lower confidence.
+- Tool priority: run_anomaly -> analyze_satellite_image -> web_search -> run_slope_analysis.`
+
+    const systemPrompt = `${modeHeader}
 
 You have access to live data and tools. Call tools when the user asks for analysis, data queries, navigation, or information.
 Always explain your reasoning briefly, then call the tool. After tools return, summarize the findings.
@@ -259,6 +291,8 @@ ${locationDesc}
 ${placeName ? `Place name: ${placeName}` : ''}
 
 ${bboxDesc}
+
+${reasoningStyle}
 
 Full scene context:
 ${ctxStr}

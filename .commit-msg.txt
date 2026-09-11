@@ -1,13 +1,35 @@
-Fix two crashes: NetworkGridPanel rendering object arrays + preload missing unsub returns
+Port OGOS privacy mode + AI analysis mode toggle + climate integrity hydration
 
-- NetworkGridPanel: grid update payload contains arrays of asset/measurement
-  objects, not counts. Use .length for display. Also fix NetHealth/NetVpn
-  interfaces to match actual NetworkHealth/VpnStatus shapes (status,
-  connectivityScore, latency, packetLoss, isActive, publicIP, vpnProvider).
-- Preload: all on* subscription methods now return proper unsubscribe
-  functions via a shared subscribe() helper. Previously they returned
-  undefined, causing "unsub is not a function" crashes in components
-  that expected a cleanup return (e.g. PredictionPanel).
+Privacy mode (ported from OGOS RightPanel):
+- New PrivacyToggle component with two-step confirmation:
+  1. Type YES in the input box
+  2. Final warning dialog with full details + Cancel/OK
+- Privacy ON by default; type YES then OK to reveal
+- Always-visible toolbar button (not buried in NET/GRID sub-panel)
+  — privacy is a global workstation state, not a network setting
+- NetworkGridPanel masks connections, IPs, countries, VPN, location, ISP
+  when privacy is on
+- NetworkPlugin hides user-location node and all connection arcs on the
+  globe when privacy is on (prevents revealing own country/city)
+- Global privacy state synced to network plugin via useEffect
+
+AI analysis mode toggle (ported from OGOS AIBottomBar):
+- Added Active SAR vs Legacy/Research mode toggle to AiPanel header
+- Mode-aware system prompt in ai-bridge.ts chatWithTools():
+  - active-sar: LKP-centric, time-critical, conservative, tight zones
+  - legacy-research: bbox-spread, exploratory, speculation allowed, wide zones
+- Mode passed through ai.chat() -> IPC -> chatWithTools()
+- Hypothesis generation is mode-aware (2-3 tight vs 4-6 wide)
+
+Climate integrity hydration (like Argo fetch):
+- ClimateMonitor stores lastIntegrityUpdate and exposes getLastIntegrity()
+- New IPC channel CLIMATE_INTEGRITY_GET_CURRENT + handler
+- Preload exposes climate.getIntegrityCurrent()
+- ClimateIntegrityPanel requests current state on mount instead of
+  waiting up to 4 min for next broadcast
+
+Weather UI:
+- Added "GET FORECAST" button to WeatherOverlay hint
 
 Generated with [Devin](https://devin.ai)
 

@@ -103,6 +103,7 @@ const api = {
     onUpdate: (cb: (update: unknown) => void) => subscribe(IPC.CLIMATE_UPDATE, cb),
     getCurrent: () => ipcRenderer.invoke(IPC.CLIMATE_GET_CURRENT),
     onIntegrity: (cb: (update: unknown) => void) => subscribe(IPC.CLIMATE_INTEGRITY, cb),
+    getIntegrityCurrent: () => ipcRenderer.invoke(IPC.CLIMATE_INTEGRITY_GET_CURRENT),
     onAlert: (cb: (alert: unknown) => void) => subscribe(IPC.CLIMATE_ALERT, cb),
     setViewport: (bounds: unknown) => ipcRenderer.send(IPC.CLIMATE_SET_VIEWPORT, bounds),
     whitelist: (stationId: string) => ipcRenderer.invoke(IPC.CLIMATE_WHITELIST, stationId),
@@ -167,8 +168,8 @@ const api = {
     getSession: (sessionId: string) => ipcRenderer.invoke('ai:session:get', { sessionId }),
 
     // Chat with tools (streaming via ai:chat:stream events)
-    chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string }) =>
-      ipcRenderer.invoke(IPC.AI_CHAT, { sessionId, prompt, image: opts?.image, model: opts?.model }),
+    chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research' }) =>
+      ipcRenderer.invoke(IPC.AI_CHAT, { sessionId, prompt, image: opts?.image, model: opts?.model, mode: opts?.mode }),
 
     // Vision (one-shot viewport analysis)
     vision: (prompt: string, image: string, model?: string) =>

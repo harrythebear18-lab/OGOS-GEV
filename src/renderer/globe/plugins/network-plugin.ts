@@ -122,6 +122,16 @@ export class NetworkPlugin implements EarthEnginePlugin {
       this.updateUserLocation()
     }
 
+    // When privacy mode is ON, do not render any connection arcs or
+    // endpoints on the globe — they all originate from the user's
+    // location and would reveal the user's country/city.
+    if (this.privacyMode) {
+      this.dataSource.entities.removeAll()
+      this.knownConns.clear()
+      this.status = { count: 0, status: 'nominal' }
+      return
+    }
+
     // Only render connections with GeoIP data
     const geoConns = connections.filter((c) => c.geo && c.geo.lat != null)
 
@@ -143,7 +153,16 @@ export class NetworkPlugin implements EarthEnginePlugin {
   }
 
   private updateUserLocation(): void {
-    if (!this.dataSource || !this.userLocation) return
+    if (!this.dataSource) return
+
+    // When privacy mode is ON, do not render the user location node —
+    // it would reveal the user's country/city on the map.
+    if (this.privacyMode) {
+      this.dataSource.entities.removeById('user-location')
+      return
+    }
+    if (!this.userLocation) return
+
     const { lat, lon } = this.userLocation
     const position = Cesium.Cartesian3.fromDegrees(lon, lat, 0)
 

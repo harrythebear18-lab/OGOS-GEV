@@ -22,6 +22,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { mask, maskIP } from './PrivacyToggle'
 
 interface NetStats {
   totalConnections?: number
@@ -96,7 +97,7 @@ interface Alert {
   source?: string
 }
 
-export default function NetworkGridPanel() {
+export default function NetworkGridPanel({ privacyMode = true }: { privacyMode?: boolean }) {
   // Network state
   const [netUpdate, setNetUpdate] = useState<NetUpdate | null>(null)
   const [netHealth, setNetHealth] = useState<NetHealth | null>(null)
@@ -247,22 +248,30 @@ export default function NetworkGridPanel() {
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Connections</span>
         <span style={panelStyle.value}>
-          {netUpdate?.stats?.activeConnections ?? '—'} active / {netUpdate?.stats?.totalConnections ?? '—'} total
+          {privacyMode
+            ? '••• active / ••• total'
+            : `${netUpdate?.stats?.activeConnections ?? '—'} active / ${netUpdate?.stats?.totalConnections ?? '—'} total`}
         </span>
       </div>
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>TCP / UDP</span>
         <span style={panelStyle.value}>
-          {netUpdate?.connections?.filter((c) => c.protocol === 'TCP').length ?? '—'} / {netUpdate?.connections?.filter((c) => c.protocol === 'UDP').length ?? '—'}
+          {privacyMode
+            ? '••• / •••'
+            : `${netUpdate?.connections?.filter((c) => c.protocol === 'TCP').length ?? '—'} / ${netUpdate?.connections?.filter((c) => c.protocol === 'UDP').length ?? '—'}`}
         </span>
       </div>
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Unique IPs</span>
-        <span style={panelStyle.value}>{netUpdate?.stats?.uniqueIPs ?? '—'}</span>
+        <span style={panelStyle.value}>
+          {privacyMode ? '•••' : (netUpdate?.stats?.uniqueIPs ?? '—')}
+        </span>
       </div>
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>Countries</span>
-        <span style={panelStyle.value}>{netUpdate?.stats?.uniqueCountries ?? '—'}</span>
+        <span style={panelStyle.value}>
+          {privacyMode ? '•••' : (netUpdate?.stats?.uniqueCountries ?? '—')}
+        </span>
       </div>
 
       {/* Health */}
@@ -300,14 +309,18 @@ export default function NetworkGridPanel() {
       <div style={panelStyle.row}>
         <span style={panelStyle.label}>VPN</span>
         <span style={netVpn?.isActive ? panelStyle.valueActive : panelStyle.valueMuted}>
-          {netVpn?.isActive ? `ACTIVE (${netVpn.vpnProvider ?? 'unknown'})` : 'INACTIVE'}
+          {netVpn?.isActive
+            ? `ACTIVE (${privacyMode ? '•••' : (netVpn.vpnProvider ?? 'unknown')})`
+            : 'INACTIVE'}
         </span>
         <button style={panelStyle.miniBtn} onClick={refreshVpn}>↻</button>
       </div>
       {netVpn?.publicIP && (
         <div style={panelStyle.row}>
           <span style={panelStyle.label}>Public IP</span>
-          <span style={panelStyle.valueSmall}>{netVpn.publicIP}</span>
+          <span style={panelStyle.valueSmall}>
+            {privacyMode ? maskIP(netVpn.publicIP, true) : netVpn.publicIP}
+          </span>
         </div>
       )}
       {netVpn?.dnsLeakDetected && (
@@ -323,13 +336,17 @@ export default function NetworkGridPanel() {
           <div style={panelStyle.row}>
             <span style={panelStyle.label}>Location</span>
             <span style={panelStyle.valueSmall}>
-              {userLocation.city ?? '—'}, {userLocation.country ?? '—'}
+              {privacyMode
+                ? '•••, •••'
+                : `${userLocation.city ?? '—'}, ${userLocation.country ?? '—'}`}
             </span>
           </div>
           {userLocation.isp && (
             <div style={panelStyle.row}>
               <span style={panelStyle.label}>ISP</span>
-              <span style={panelStyle.valueSmall}>{userLocation.isp}</span>
+              <span style={panelStyle.valueSmall}>
+                {privacyMode ? '•••' : userLocation.isp}
+              </span>
             </div>
           )}
         </>

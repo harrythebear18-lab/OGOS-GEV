@@ -20,6 +20,11 @@ export default function ClimateIntegrityPanel() {
   const [integrity, setIntegrity] = useState<IntegrityUpdate | null>(null)
 
   useEffect(() => {
+    // Request current state immediately (don't wait up to 4 min for next broadcast)
+    window.api.climate.getIntegrityCurrent?.().then((update: unknown) => {
+      if (update) setIntegrity(update as IntegrityUpdate)
+    }).catch(() => {})
+
     const unsub = window.api.climate.onIntegrity((update: unknown) => {
       setIntegrity(update as IntegrityUpdate)
     })

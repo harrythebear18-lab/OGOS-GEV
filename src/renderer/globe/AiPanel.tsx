@@ -45,6 +45,7 @@ export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
   const [streamingText, setStreamingText] = useState('')
   const [activeTools, setActiveTools] = useState<{ name: string; args: unknown }[]>([])
   const [activeTab, setActiveTab] = useState<'chat' | 'hypotheses'>('chat')
+  const [analysisMode, setAnalysisMode] = useState<'active-sar' | 'legacy-research'>('active-sar')
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
 
   // Notify parent when hypotheses change (for explainability overlay)
@@ -165,7 +166,7 @@ export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
     setStreamingText('')
 
     try {
-      const result = await window.api.ai.chat(sessionId, userText, { model: model || undefined })
+      const result = await window.api.ai.chat(sessionId, userText, { model: model || undefined, mode: analysisMode })
       // The stream handler will add the assistant message via 'done' event
       // But if streaming didn't produce tokens, add the result here
       if (result?.error) {
@@ -192,7 +193,7 @@ export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
       const canvas = viewer.canvas as HTMLCanvasElement
       const dataUrl = canvas.toDataURL('image/png')
 
-      const result = await window.api.ai.chat(sessionId, userText, { image: dataUrl, model: model || undefined })
+      const result = await window.api.ai.chat(sessionId, userText, { image: dataUrl, model: model || undefined, mode: analysisMode })
       if (result?.error) {
         setMessages((m) => [...m, { id: nextId(), role: 'assistant', content: result.error || 'Unknown error', error: true }])
         setLoading(false)
@@ -215,14 +216,22 @@ export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
 
     try {
       // Ask the AI to generate structured hypotheses about the current scene
-      const prompt = `Generate 3-5 search hypotheses about the current viewport. For each, provide:
+      // Mode-aware: Active SAR = 2-3 tight zones, high confidence
+      //             Legacy/Research = 4-6 wide zones, exploratory
+      const countHint = analysisMode === 'active-sar' ? '2-3' : '4-6'
+      const styleHint = analysisMode === 'active-sar'
+        ? 'Generate TIGHT hypotheses with small zones (under 1km) and HIGH confidence. Be evidence-driven and conservative.'
+        : 'Generate EXPLORATORY hypotheses with WIDE zones (1-5km) and alternative theories. Speculation is allowed. Consider that the person may not be alive or moving.'
+      const prompt = `Generate ${countHint} search hypotheses about the current viewport. ${styleHint}
+
+For each, provide:
 - title: short title
 - confidence: low|moderate|high|critical
 - rationale: why this hypothesis
 - suggestedZones: array of { label, confidence (0-100), coords: [{lng,lat},...], reasons: [string] }
 
 Format as JSON array. Use approximate viewport coordinates for zone polygons.`
-      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined }) as { response?: string; error?: string }
+      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined, mode: analysisMode }) as { response?: string; error?: string }
 
       if (result?.error) {
         console.warn('[AiPanel] hypothesis generation failed:', result.error)
@@ -312,6 +321,24 @@ Format as JSON array. Use approximate viewport coordinates for zone polygons.`
             </button>
           )}
         </div>
+      </div>
+
+      {/* Mode toggle — Active SAR vs Legacy/Research (ported from OGOS AIBottomBar) */}
+      <div style={panelStyle.modeToggle}>
+        <button
+          style={panelStyle.modeBtn(analysisMode === 'active-sar', true)}
+          onClick={() => setAnalysisMode('active-sar')}
+          title="Active SAR: LKP-centric, time-critical, conservative, tight zones."
+        >
+          ACTIVE SAR
+        </button>
+        <button
+          style={panelStyle.modeBtn(analysisMode === 'legacy-research', false)}
+          onClick={() => setAnalysisMode('legacy-research')}
+          title="Legacy / Research: bbox-spread, exploratory, speculation allowed, wide zones."
+        >
+          LEGACY / RESEARCH
+        </button>
       </div>
 
       {/* Tab bar */}
@@ -699,6 +726,32 @@ const panelStyle = {
     display: 'flex',
     borderBottom: '1px solid #1e2a3a',
   },
+  modeToggle: {
+    display: 'flex',
+    gap: 2,
+    padding: '4px 6px',
+    background: 'rgba(11, 15, 20, 0.5)',
+    borderBottom: '1px solid #1e2a3a',
+  },
+  modeBtn: (active: boolean, isSAR: boolean) => ({
+    flex: 1,
+    padding: '4px 6px',
+    background: active
+      ? (isSAR ? 'rgba(255, 138, 74, 0.15)' : 'rgba(160, 74, 255, 0.15)')
+      : 'transparent',
+    color: active
+      ? (isSAR ? '#ff8a4a' : '#a04aff')
+      : '#6b7d92',
+    border: active
+      ? (isSAR ? '1px solid rgba(255, 138, 74, 0.4)' : '1px solid rgba(160, 74, 255, 0.4)')
+      : '1px solid transparent',
+    borderRadius: 2,
+    fontSize: 8,
+    letterSpacing: 0.5,
+    fontWeight: 'bold' as const,
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+  }),
   tab: (active: boolean) => ({
     flex: 1,
     padding: '6px 8px',

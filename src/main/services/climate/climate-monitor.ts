@@ -83,6 +83,7 @@ class ClimateMonitor {
   private resultsVerifier: ResultsVerifier
   private heuristicWatchdog: HeuristicWatchdog
   private lastIntegritySummary: IntegritySummary | null = null
+  private lastIntegrityUpdate: IntegrityUpdate | null = null
 
   constructor() {
     this.dataFlowMonitor = new DataFlowMonitor((alert) => this.emitAlert(alert))
@@ -107,6 +108,11 @@ class ClimateMonitor {
 
   getIntegritySummary(): IntegritySummary | null {
     return this.lastIntegritySummary
+  }
+
+  /** Rebuild the last IntegrityUpdate from stored state (for getCurrent hydration). */
+  getLastIntegrity(): IntegrityUpdate | null {
+    return this.lastIntegrityUpdate
   }
 
   start(): void {
@@ -351,6 +357,7 @@ class ClimateMonitor {
         wildfires: fireFeatures,
         timestamp: Date.now(),
       }
+      this.lastIntegrityUpdate = integrity
       broadcastToWindows(IPC.CLIMATE_INTEGRITY, integrity)
 
       // ── Broadcast CLIMATE_TRAFFIC (with real integrity scores) ──

@@ -115,7 +115,19 @@ export default function WeatherOverlay({ onClose }: WeatherOverlayProps) {
       {loading && !c && <div style={overlayStyle.loading}>Fetching forecast…</div>}
       {error && <div style={overlayStyle.error}>{error}</div>}
       {!c && !loading && !error && (
-        <div style={overlayStyle.hint}>Place an LKP pin or move the camera to load forecast</div>
+        <div style={overlayStyle.hint}>
+          Place an LKP pin (right-click globe) or move the camera to load forecast.
+          <br />
+          <button
+            style={overlayStyle.getBtn}
+            onClick={() => {
+              const last = lastPointRef.current
+              if (last) fetchForecast(last)
+            }}
+          >
+            GET FORECAST
+          </button>
+        </div>
       )}
       {c && <CurrentConditionsCard current={c} />}
 
@@ -343,6 +355,19 @@ const overlayStyle: Record<string, any> = {
     fontStyle: 'italic',
     textAlign: 'center',
     padding: '8px 0',
+  },
+  getBtn: {
+    marginTop: 6,
+    padding: '4px 12px',
+    fontSize: 9,
+    fontFamily: 'monospace',
+    letterSpacing: 0.5,
+    cursor: 'pointer',
+    border: '1px solid #4affd4',
+    borderRadius: 2,
+    background: 'rgba(74, 255, 212, 0.1)',
+    color: '#4affd4',
+    fontWeight: 'bold',
   },
 }
 

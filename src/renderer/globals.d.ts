@@ -67,6 +67,7 @@ declare global {
         onUpdate: (cb: (update: unknown) => void) => () => void
         getCurrent: () => Promise<any>
         onIntegrity: (cb: (update: unknown) => void) => () => void
+        getIntegrityCurrent: () => Promise<any>
         onAlert: (cb: (alert: unknown) => void) => () => void
         setViewport: (bounds: unknown) => void
         whitelist: (stationId: string) => Promise<unknown>
@@ -78,7 +79,7 @@ declare global {
         createSession: () => Promise<{ sessionId: string; model: string; visionModel: string }>
         destroySession: (sessionId: string) => Promise<{ ok: boolean }>
         getSession: (sessionId: string) => Promise<{ sessionId: string; model: string; visionModel: string; messageCount: number; streaming: boolean } | { error: string }>
-        chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string }) => Promise<{ content: string; error?: string }>
+        chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research' }) => Promise<{ content: string; error?: string }>
         vision: (prompt: string, image: string, model?: string) => Promise<{ content: string; error?: string }>
         registerTools: (tools: unknown[]) => Promise<{ count: number }>
         resolveTool: (callId: string, result: unknown) => Promise<{ ok: boolean }>
