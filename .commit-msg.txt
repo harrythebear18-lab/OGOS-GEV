@@ -1,53 +1,17 @@
-Port GEV AI architecture — analyst engine, action runner, detection overlay, context store, annotation resolver
+Fix hydrology perf, viewport culling, entity inspection, GPU stability
 
-Analyst Query Engine (analyst/analyst-engine.ts):
-- Pure query logic over live features (aircraft, vessels, fires, quakes, satellites)
-- Spatial scope: view, radius, bbox, anywhere
-- Attribute filters: gt, lt, eq, contains on any meta field
-- Sort by distance or any numeric field
-- Follow-up queries with memory of last result set
-- Summary stats (count, min, max)
-
-Context Store (analyst/context-store.ts):
-- Shared entity selection and tracking state
-- Entity registry with per-entity metadata
-- Click selection + camera tracking
-- Event-driven subscriptions for panels, AI, detection overlay
-
-Annotation Resolver (analyst/annotation-resolver.ts):
-- Nominatim geocoding (free, no key)
-- Overpass building/area outline fetching with multi-server fallback
-- Caching with TTL for negative results
-- resolveAnnotationTarget: geocode + optional footprint
-
-Action Runner (analyst/action-runner.ts):
-- 8 tool functions the LLM can call:
-  fly_to, zoom_to_globe, set_layer_visibility, query_data,
-  select_nearest, track_entity, stop_tracking, resolve_place
-- Layer alias normalization (planes→aircraft, ships→vessel, etc.)
-- Bound to Cesium viewer + plugin manager + live features + view context
-
-Detection Overlay (analyst/detection-overlay.ts + plugins/detection-plugin.ts):
-- Screen-space corner brackets + labels over tracked objects
-- 4 density modes: OFF / SPARSE (15) / BALANCED (50) / DENSE (200)
-- 4 themes: normal, retro, surveillance, thermal (with scanlines)
-- Per-layer weighting (storms > quakes > aircraft > vessels)
-- Distance-scaled bracket size + label with callsign/type/distance
-
-Vision Plugin Integration:
-- Tool Use toggle — enable/disable LLM tool calling
-- Chat (with tools) — sends prompt with live data summary + tool descriptions
-- Query Live Data — direct analyst engine query from natural language
-- Tracked Objects display — count of live features loaded
-- Subscribes to live updates for analyst queries
-
-Other fixes included in this commit:
-- Aircraft ADS-B: 15s→60s poll interval + 429 backoff (5min cooldown)
-- Ollama health check: fixed status field mismatch (running vs status:ok)
-- CLIP health check: fixed same status field mismatch
-- Added rainfall method to preload weather bridge + globals.d.ts
-- Added scripts/clip_server.py (open_clip FastAPI server on :9776)
-- Added scripts/check-ai.js (status checker for Ollama + CLIP)
+- runoff-service: replace O(n^2) queue.shift() with O(n) head pointer
+- roads/water plugins: dynamic viewport culling (2k-50k by altitude)
+- roads/water plugins: diff-based entity updates to prevent flicker
+- anomaly plugin: outline rings + markers instead of opaque fill
+- slope/canopy/anomaly/hydrology: post-await null checks for lifecycle safety
+- road/water services: remove dead overpass.kumi.by endpoint
+- Hud: add reset-to-north button
+- SatelliteOverlay: ISS now follows hillshade clock (mirrors sun orbit)
+- index.ts: drop Vulkan/WebGPU flags (GPU driver BSOD fix)
+- EntityInfoBox: new component for clickable entity inspection
+- DrawingManager: entity picking when draw mode is none
+- Globe/App: wire onEntityPick callback
 
 Generated with [Devin](https://devin.ai)
 

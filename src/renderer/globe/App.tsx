@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import * as Cesium from 'cesium'
 import Globe from './Globe'
-import SatelliteOverlay from './SatelliteOverlay'
+import SatellitesOverlay from './SatellitesOverlay'
 import LayerPanel from './LayerPanel'
 import Hud from './Hud'
 import CockpitShell from './CockpitShell'
@@ -10,6 +10,7 @@ import PluginPanel from './plugins/PluginPanel'
 import InspectorPanel from './InspectorPanel'
 import StatusBar from './StatusBar'
 import EntityInfoBox from './EntityInfoBox'
+import AiPanel from './AiPanel'
 import { pluginManager } from './plugins'
 import type { PluginContext } from './plugins'
 import type { GIBSLayer, DrawMode, Selection, LngLat } from '@shared/types'
@@ -59,10 +60,11 @@ export default function App() {
   // ── Cockpit windowing state ──
   const [dockConfig, setDockConfig] = useState({
     leftWidth: 260,
-    rightWidth: 280,
+    rightWidth: 320,
     leftVisible: true,
     rightVisible: true,
     activeLeftTab: 'plugins' as 'layers' | 'plugins',
+    activeRightTab: 'inspector' as 'inspector' | 'ai',
   })
 
   useEffect(() => {
@@ -224,6 +226,9 @@ export default function App() {
           lkp={lkpPin}
         />
       }
+      aiPanel={
+        <AiPanel viewer={viewer} />
+      }
       statusBar={
         <MemoStatusBar
           plugins={allPlugins}
@@ -264,8 +269,8 @@ export default function App() {
         hasSelection={selection !== null || lkpPin !== null}
       />
 
-      {/* Satellites overlay */}
-      {viewer && satellitesVisible && <SatelliteOverlay viewer={viewer} />}
+      {/* Satellites overlay — SGP4 driven by Cesium clock */}
+      {viewer && satellitesVisible && <SatellitesOverlay viewer={viewer} enabled={satellitesVisible} />}
 
       {/* HUD bar */}
       <MemoHud viewport={hudViewport} imageryLayer={imageryLayer} onResetNorth={resetNorth} />

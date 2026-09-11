@@ -88,7 +88,7 @@ async function getNwsAlerts(lng: number, lat: number): Promise<WebSearchResult[]
   }
 }
 
-async function reverseGeocode(lng: number, lat: number): Promise<string | null> {
+export async function reverseGeocode(lng: number, lat: number): Promise<string | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=12`
     const res = await fetch(url, {

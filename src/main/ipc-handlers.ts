@@ -5,6 +5,12 @@ import { TileCache } from './services/tile-cache'
 import { getSceneContext, updateSceneContext } from './services/scene-context'
 import { broadcastToWindows } from './windows'
 import { chat as ollamaChat, vision as ollamaVisionRaw, checkHealth as ollamaHealth, type ChatResult } from './services/ollama-service'
+import {
+  createSession, getSession, destroySession, chatWithTools, analyzeViewport,
+  checkAIHealth, registerTools, resolveToolCall, rejectToolCall, getRegisteredTools,
+} from './services/ai-bridge'
+import type { ToolDefinition } from './services/ollama-service'
+import { getTleStrings } from './services/live/satellites'
 import { searchSentinelScenes, GIBS_LAYERS } from './services/sentinel-service'
 import { sampleElevation, elevationProfile } from './services/dem-service'
 import { analyzeSlopeArea } from './services/slope-service'
@@ -19,6 +25,7 @@ import { analyzeCanopy } from './services/canopy-service'
 import { runBehaviorEngine } from './services/behavior-engine'
 import { fetchWaterFeatures } from './services/water-service'
 import { fetchRoads } from './services/road-service'
+import { fetchInfrastructure } from './services/infrastructure-service'
 import { fetchRadarData, fetchWeather, fetchRainfallForBbox } from './services/weather-service'
 import { checkClipHealth, embedText, embedImage, similarity } from './services/clip-service'
 import { webSearch } from './services/web-search-service'
@@ -144,6 +151,10 @@ export function registerIpcHandlers(): void {
     return fetchRoads(req.bounds)
   })
 
+  ipcMain.handle(IPC.INFRA_FETCH, async (_event, req) => {
+    return fetchInfrastructure(req.bounds)
+  })
+
   /* ── Satellite imagery (GIBS) ── */
   ipcMain.handle(IPC.SENTINEL_SEARCH, async (_event, req) => {
     return searchSentinelScenes(req)
@@ -151,6 +162,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.SENTINEL_LAYERS, () => {
     return GIBS_LAYERS
+  })
+
+  ipcMain.handle(IPC.SAT_TLE_GET, async () => {
+    try {
+      const tles = await getTleStrings()
+      return { tles, error: undefined }
+    } catch (e) {
+      return { tles: [], error: e instanceof Error ? e.message : String(e) }
+    }
   })
 
   /* ── Weather ── */
@@ -166,12 +186,69 @@ export function registerIpcHandlers(): void {
     return fetchRainfallForBbox(req.bounds)
   })
 
-  /* ── AI ── */
+  /* ── AI Bridge ── */
   ipcMain.handle(IPC.AI_HEALTH, async () => {
-    return ollamaHealth()
+    return checkAIHealth()
   })
 
+  // Create a new AI session
+  ipcMain.handle('ai:session:create', async () => {
+    const session = createSession()
+    return { sessionId: session.id, model: session.model, visionModel: session.visionModel }
+  })
+
+  // Destroy an AI session
+  ipcMain.handle('ai:session:destroy', async (_event, args) => {
+    destroySession(args.sessionId)
+    return { ok: true }
+  })
+
+  // Get session state
+  ipcMain.handle('ai:session:get', async (_event, args) => {
+    const session = getSession(args.sessionId)
+    if (!session) return { error: 'Session not found' }
+    return {
+      sessionId: session.id,
+      model: session.model,
+      visionModel: session.visionModel,
+      messageCount: session.messages.length,
+      streaming: session.streaming,
+    }
+  })
+
+  // Chat with tools (streaming via IPC events)
   ipcMain.handle(IPC.AI_CHAT, async (_event, args) => {
+    const { sessionId, prompt, image, model } = args
+    const result = await chatWithTools(sessionId, prompt, { image, model })
+    return result
+  })
+
+  // Vision (one-shot viewport analysis)
+  ipcMain.handle(IPC.AI_VISION, async (_event, args) => {
+    const { prompt, image, model } = args
+    return analyzeViewport(image, prompt, model)
+  })
+
+  // Register tools from renderer (action-runner)
+  ipcMain.handle('ai:tools:register', async (_event, args) => {
+    registerTools(args.tools as ToolDefinition[])
+    return { count: getRegisteredTools().length }
+  })
+
+  // Resolve a tool call (renderer sends back the result)
+  ipcMain.handle('ai:tool:resolve', async (_event, args) => {
+    resolveToolCall(args.callId, args.result)
+    return { ok: true }
+  })
+
+  // Reject a tool call (renderer sends back an error)
+  ipcMain.handle('ai:tool:reject', async (_event, args) => {
+    rejectToolCall(args.callId, args.error)
+    return { ok: true }
+  })
+
+  // Legacy: keep old AI_CHAT handler for backward compat
+  ipcMain.handle('ai:chat:legacy', async (_event, args) => {
     const { prompt, model, context } = args
     const ctx = getSceneContext()
     const sysContext = context ?? JSON.stringify(ctx)
@@ -184,16 +261,6 @@ export function registerIpcHandlers(): void {
       return { content: result.content, model: result.model || model || 'unknown', error: undefined }
     } catch (e) {
       return { content: '', model: model || 'unknown', error: e instanceof Error ? e.message : String(e) }
-    }
-  })
-
-  ipcMain.handle(IPC.AI_VISION, async (_event, args) => {
-    const { prompt, image, model } = args
-    try {
-      const text = await ollamaVisionRaw(image, prompt, model)
-      return { content: text, model: model || 'qwen2.5vl:7b', error: undefined }
-    } catch (e) {
-      return { content: '', model: model || 'qwen2.5vl:7b', error: e instanceof Error ? e.message : String(e) }
     }
   })
 

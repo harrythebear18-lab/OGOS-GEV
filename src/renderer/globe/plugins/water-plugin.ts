@@ -140,7 +140,7 @@ export class WaterPlugin implements EarthEnginePlugin {
         return
       }
 
-      this.allFeatures = result.features
+      this.allFeatures = result.features.slice(0, MAX_VISIBLE_ENTITIES)
       this.lastError = result.error ?? null
       this.dataSource.entities.removeAll()
       this.lastViewBbox = null  // force re-cull
@@ -161,12 +161,15 @@ export class WaterPlugin implements EarthEnginePlugin {
   private cullToViewport(viewBbox: BBox): void {
     if (!this.dataSource) return
 
-    // Dynamic cap: more entities when zoomed out
+    // Dynamic cap: more entities when zoomed out (large viewport shows
+    // more area, needs higher cap), fewer when zoomed in (small viewport
+    // naturally limits count via bbox intersection). The cap is just a
+    // safety valve — the viewport culling does the real limiting.
     const camHeight = this.viewer?.camera?.positionCartographic?.height ?? 50000
-    const maxEntities = camHeight > 500_000 ? MAX_VISIBLE_ENTITIES
-      : camHeight > 100_000 ? 20000
-      : camHeight > 20_000 ? 8000
-      : MIN_VISIBLE_ENTITIES
+    const maxEntities = camHeight > 1_000_000 ? MAX_VISIBLE_ENTITIES
+      : camHeight > 200_000 ? 20000
+      : camHeight > 50_000 ? 12000
+      : 8000
 
     const visibleIds = new Set<string>()
     const toAdd: WaterFeature[] = []

@@ -40,9 +40,14 @@ declare global {
         remainsCorridor: (req: unknown) => Promise<unknown>
       }
 
+      infrastructure: {
+        fetch: (bounds: unknown) => Promise<{ features: any[]; bounds: any[]; error?: string }>
+      }
+
       imagery: {
         search: (req: unknown) => Promise<unknown>
         layers: () => Promise<any[]>
+        getTle: () => Promise<{ tles: { name: string; satnum: number; line1: string; line2: string }[]; error?: string }>
       }
 
       weather: {
@@ -59,9 +64,17 @@ declare global {
       }
 
       ai: {
-        health: () => Promise<{ running: boolean; models: { name: string; size: number; digest: string; capabilities: string[] }[] }>
-        chat: (prompt: string, model?: string, context?: string) => Promise<{ content: string; model: string; error?: string }>
-        vision: (prompt: string, image: string, model?: string) => Promise<{ content: string; model: string; error?: string }>
+        health: () => Promise<{ running: boolean; models: { name: string; capabilities: string[] }[] }>
+        createSession: () => Promise<{ sessionId: string; model: string; visionModel: string }>
+        destroySession: (sessionId: string) => Promise<{ ok: boolean }>
+        getSession: (sessionId: string) => Promise<{ sessionId: string; model: string; visionModel: string; messageCount: number; streaming: boolean } | { error: string }>
+        chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string }) => Promise<{ content: string; error?: string }>
+        vision: (prompt: string, image: string, model?: string) => Promise<{ content: string; error?: string }>
+        registerTools: (tools: unknown[]) => Promise<{ count: number }>
+        resolveTool: (callId: string, result: unknown) => Promise<{ ok: boolean }>
+        rejectTool: (callId: string, error: string) => Promise<{ ok: boolean }>
+        onStream: (cb: (data: { sessionId: string; type: string; token?: string; toolName?: string; args?: unknown; result?: unknown; content?: string; error?: string; callId?: string }) => void) => () => void
+        chatLegacy: (prompt: string, model?: string, context?: string) => Promise<{ content: string; model: string; error?: string }>
         clipHealth: () => Promise<{ running: boolean; model?: string }>
         clipSearch: (query: string, bounds?: unknown) => Promise<{ results: any[]; error?: string }>
         webSearch: (query: string, limit?: number) => Promise<{ results: any[] }>

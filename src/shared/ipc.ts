@@ -27,10 +27,14 @@ export const IPC = {
   BEHAVIOR_ENGINE: 'terrain:behavior:engine',
   WATER_FETCH: 'terrain:water:fetch',
   ROAD_FETCH: 'terrain:road:fetch',
+  INFRA_FETCH: 'infra:fetch',
 
   // Satellite imagery (GIBS)
   SENTINEL_SEARCH: 'imagery:sentinel:search',
   SENTINEL_LAYERS: 'imagery:sentinel:layers',
+
+  // Satellite TLE data (for renderer-side SGP4 propagation)
+  SAT_TLE_GET: 'sat:tle:get',
 
   // Weather
   WEATHER_RADAR: 'weather:radar',

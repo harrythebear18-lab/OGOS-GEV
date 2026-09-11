@@ -4,6 +4,7 @@
  */
 
 import type { LngLat, WaterFeature, WaterResponse } from '@shared/types'
+import { featureCache } from './feature-cache'
 
 export type { WaterFeature }
 
@@ -29,6 +30,15 @@ interface OverpassElement {
 
 export async function fetchWaterFeatures(bounds: [LngLat, LngLat]): Promise<WaterResponse> {
   const [sw, ne] = bounds
+  const bboxNums: [number, number, number, number] = [sw.lng, sw.lat, ne.lng, ne.lat]
+
+  // Check disk cache first
+  const cached = await featureCache.get<WaterResponse>('water', bboxNums)
+  if (cached) {
+    console.log('[water] cache hit')
+    return cached
+  }
+
   const bbox = `${sw.lat},${sw.lng},${ne.lat},${ne.lng}`
 
   const query = `
@@ -40,7 +50,7 @@ export async function fetchWaterFeatures(bounds: [LngLat, LngLat]): Promise<Wate
       node["natural"="spring"](${bbox});
       way["natural"="wetland"](${bbox});
     );
-    out geom;
+    out geom 10000;
   `
 
   let lastError: Error | null = null
@@ -74,8 +84,10 @@ export async function fetchWaterFeatures(bounds: [LngLat, LngLat]): Promise<Wate
 
       const data = JSON.parse(text)
       const features = parseOverpassResponse(data)
+      const result = { features, bounds }
+      featureCache.set('water', bboxNums, result).catch(() => {})
       console.log(`[water] ${url} OK: ${features.length} features`)
-      return { features, bounds }
+      return result
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e))
       console.warn(`[water] ${url} failed: ${lastError.message}`)

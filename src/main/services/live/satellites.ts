@@ -15,6 +15,8 @@ interface SatRecord {
   name: string
   satnum: number
   satrec: satellite.SatRec
+  line1: string
+  line2: string
 }
 
 let satRecords: SatRecord[] = []
@@ -38,10 +40,11 @@ async function loadTle(): Promise<void> {
       if (!line1.startsWith('1 ') || !line2.startsWith('2 ')) continue
       const satrec = satellite.twoline2satrec(line1, line2)
       if (!satrec) continue
-      records.push({ name, satnum: Number(line1.slice(2, 7)), satrec })
+      records.push({ name, satnum: Number(line1.slice(2, 7)), satrec, line1, line2 })
     }
     if (records.length > 0) {
       satRecords = records
+      tleStrings = records.map((r) => ({ name: r.name, satnum: r.satnum, line1: r.line1, line2: r.line2 }))
       tleLoaded = true
       console.log(`[satellites] loaded ${records.length} TLE records from CelesTrak`)
       return
@@ -52,7 +55,8 @@ async function loadTle(): Promise<void> {
     if (!tleLoaded) {
       const satrec = satellite.twoline2satrec(ISS_TLE_FALLBACK.line1, ISS_TLE_FALLBACK.line2)
       if (satrec) {
-        satRecords = [{ name: ISS_TLE_FALLBACK.name, satnum: 25544, satrec }]
+        satRecords = [{ name: ISS_TLE_FALLBACK.name, satnum: 25544, satrec, line1: ISS_TLE_FALLBACK.line1, line2: ISS_TLE_FALLBACK.line2 }]
+        tleStrings = [{ name: ISS_TLE_FALLBACK.name, satnum: 25544, line1: ISS_TLE_FALLBACK.line1, line2: ISS_TLE_FALLBACK.line2 }]
         tleLoaded = true
       }
     }
@@ -95,4 +99,21 @@ export async function getSatelliteFeatures(now = new Date()): Promise<LiveFeatur
     if (f) features.push(f)
   }
   return features
+}
+
+// Cached TLE strings for the renderer (serializable, unlike satrec objects)
+export interface TleRecord {
+  name: string
+  satnum: number
+  line1: string
+  line2: string
+}
+
+let tleStrings: TleRecord[] = []
+
+export async function getTleStrings(): Promise<TleRecord[]> {
+  if (tleStrings.length === 0) {
+    await loadTle()
+  }
+  return tleStrings
 }

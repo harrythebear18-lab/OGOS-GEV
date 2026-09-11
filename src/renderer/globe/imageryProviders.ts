@@ -23,7 +23,9 @@ export function buildGibsProvider(layer: GIBSLayer): Cesium.ImageryProvider {
 export function buildEsriProvider(): Cesium.ImageryProvider {
   return new Cesium.UrlTemplateImageryProvider({
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    maximumLevel: 19,
+    // Cap at 17 — level 18-19 tiles are numerous and cause V8 heap exhaustion.
+    // Level 17 is ~1m resolution, more than enough for analysis.
+    maximumLevel: 17,
     credit: new Cesium.Credit('Esri World Imagery (includes Sentinel-2)'),
   })
 }
@@ -36,7 +38,7 @@ export function buildEsriProvider(): Cesium.ImageryProvider {
 export function buildEsriTransportationProvider(): Cesium.ImageryProvider {
   return new Cesium.UrlTemplateImageryProvider({
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-    maximumLevel: 19,
+    maximumLevel: 17,
     credit: new Cesium.Credit('Esri World Transportation'),
   })
 }
@@ -49,7 +51,7 @@ export function buildEsriTransportationProvider(): Cesium.ImageryProvider {
 export function buildEsriReferenceProvider(): Cesium.ImageryProvider {
   return new Cesium.UrlTemplateImageryProvider({
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    maximumLevel: 19,
+    maximumLevel: 17,
     credit: new Cesium.Credit('Esri World Boundaries and Places'),
   })
 }

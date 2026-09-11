@@ -1,9 +1,12 @@
 /**
- * Qwen-VL / Ollama Vision Plugin — Scene-aware analysis.
- * Tier 4, Priority 13. From OGOS.
+ * AI Vision Plugin — Scene-aware analysis via unified AI bridge.
  *
- * Captures the current viewport, sends to Ollama vision model for analysis.
- * Streams response text. Can also chat with scene context.
+ * Replaces the old fragmented approach:
+ *   - No more double-call bug (was calling both ai:vision AND ai:chat)
+ *   - No more fake tool use (pattern-matching English text)
+ *   - Uses the AI bridge with native Ollama tool calling
+ *   - Streams responses via IPC events
+ *   - Shares scene context through the bridge
  */
 
 import * as Cesium from 'cesium'
@@ -15,7 +18,7 @@ import type { LiveFeature, LiveUpdate } from '@shared/types'
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
-  image?: string // data URL
+  image?: string
 }
 
 export class VisionPlugin implements EarthEnginePlugin {
@@ -35,7 +38,9 @@ export class VisionPlugin implements EarthEnginePlugin {
   private actionRunner: ActionRunner | null = null
   private liveFeatures: Map<string, LiveFeature> = new Map()
   private liveUnsub: (() => void) | null = null
-  private toolUseEnabled = true
+  private sessionId: string | null = null
+  private streamUnsub: (() => void) | null = null
+  private currentStreamText: string = ''
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
@@ -54,7 +59,6 @@ export class VisionPlugin implements EarthEnginePlugin {
         const cam = ctx.viewer.camera
         const carto = cam.positionCartographic
         const height = carto.height
-        // Rough view radius based on camera height
         const viewRadiusKm = Math.max(50, height / 1000 * 0.8)
         return {
           center: { lng: Cesium.Math.toDegrees(carto.longitude), lat: Cesium.Math.toDegrees(carto.latitude) },
@@ -62,6 +66,12 @@ export class VisionPlugin implements EarthEnginePlugin {
         }
       },
     })
+
+    // Register action-runner tools with the AI bridge
+    if (this.actionRunner) {
+      const tools = this.actionRunner.getTools()
+      await this.ipc!.ai.registerTools(tools)
+    }
 
     // Subscribe to live updates for analyst queries
     this.liveUnsub = ctx.ipc.live.onUpdate((update: LiveUpdate) => {
@@ -77,12 +87,49 @@ export class VisionPlugin implements EarthEnginePlugin {
       }
     })
 
+    // Subscribe to AI stream events
+    this.streamUnsub = this.ipc!.ai.onStream((data) => {
+      if (data.sessionId !== this.sessionId) return
+      switch (data.type) {
+        case 'token':
+          this.currentStreamText += data.token || ''
+          break
+        case 'tool_call':
+          // Tool is being executed by the bridge — no action needed here
+          break
+        case 'tool_request':
+          // Execute the tool call from the renderer side
+          this.executeToolRequest(data.callId!, data.toolName!, data.args as Record<string, unknown>)
+          break
+        case 'tool_result':
+          break
+        case 'done':
+          this.streaming = false
+          if (this.currentStreamText) {
+            this.messages.push({ role: 'assistant', content: this.currentStreamText })
+          }
+          this.status = { count: this.messages.length, status: 'nominal' }
+          break
+        case 'error':
+          this.streaming = false
+          this.status = { ...this.status, status: 'error', error: data.error }
+          break
+      }
+    })
+
+    // Create AI session
+    try {
+      const result = await this.ipc!.ai.createSession() as { sessionId: string; model: string; visionModel: string } | null
+      this.sessionId = result?.sessionId || null
+    } catch {
+      this.sessionId = null
+    }
+
     // Check Ollama health
     try {
-      const health = await this.ipc!.invoke('ai:health', {}) as { running: boolean; models: { name: string }[] } | null
+      const health = await this.ipc!.ai.health() as { running: boolean; models: { name: string; capabilities: string[] }[] } | null
       this.ollamaHealthy = health?.running === true
       this.models = (health?.models || []).map((m) => m.name)
-      // Prefer Qwen-VL if available
       this.activeModel = this.models.find((m) => m.includes('qwen') || m.includes('vl')) || this.models[0] || null
       this.status = {
         count: this.models.length,
@@ -97,13 +144,18 @@ export class VisionPlugin implements EarthEnginePlugin {
 
   unregister(): void {
     this.liveUnsub?.()
+    this.streamUnsub?.()
+    if (this.sessionId) this.ipc?.ai.destroySession(this.sessionId)
     this.liveUnsub = null
+    this.streamUnsub = null
     this.viewer = null
     this.ipc = null
     this.messages = []
     this.streaming = false
     this.actionRunner = null
     this.liveFeatures.clear()
+    this.sessionId = null
+    this.currentStreamText = ''
     this.status = { count: 0, status: 'disabled' }
   }
 
@@ -117,7 +169,6 @@ export class VisionPlugin implements EarthEnginePlugin {
     return [
       { type: 'display', id: 'health', label: 'Ollama', value: this.ollamaHealthy ? 'ONLINE :11434' : 'OFFLINE', color: this.ollamaHealthy ? '#4aff8a' : '#ff4a4a' },
       { type: 'select', id: 'model', label: 'Model', value: this.activeModel ?? '', options: this.models.map((m) => ({ label: m, value: m })) },
-      { type: 'toggle', id: 'toolUse', label: 'Tool Use (Actions)', value: this.toolUseEnabled },
       { type: 'input', id: 'prompt', label: 'Prompt', value: this.prompt, placeholder: 'Ask about data, fly to places...' },
       { type: 'button', id: 'analyzeViewport', label: 'Analyze Viewport', variant: 'primary', disabled: !this.ollamaHealthy || this.streaming },
       { type: 'button', id: 'chat', label: 'Chat (with tools)', variant: 'default', disabled: !this.ollamaHealthy || this.streaming },
@@ -135,8 +186,6 @@ export class VisionPlugin implements EarthEnginePlugin {
       this.activeModel = value
     } else if (id === 'prompt' && typeof value === 'string') {
       this.prompt = value
-    } else if (id === 'toolUse' && typeof value === 'boolean') {
-      this.toolUseEnabled = value
     } else if (id === 'analyzeViewport' && this.prompt) {
       await this.analyzeViewport(this.prompt)
     } else if (id === 'chat' && this.prompt) {
@@ -174,7 +223,7 @@ export class VisionPlugin implements EarthEnginePlugin {
 
   /**
    * Analyze the current viewport with a text prompt.
-   * Captures canvas, sends to Ollama vision model.
+   * Single call to the AI bridge — no double-call bug.
    */
   async analyzeViewport(prompt: string): Promise<string> {
     if (!this.ipc || !this.ollamaHealthy || !this.viewer || !this.activeModel) {
@@ -182,38 +231,28 @@ export class VisionPlugin implements EarthEnginePlugin {
     }
 
     this.streaming = true
+    this.currentStreamText = ''
     this.status = { ...this.status, status: 'loading' }
 
     try {
       const canvas = this.viewer.canvas
       const dataUrl = canvas.toDataURL('image/png')
 
-      const userMsg: ChatMessage = { role: 'user', content: prompt, image: dataUrl }
-      this.messages.push(userMsg)
+      this.messages.push({ role: 'user', content: prompt, image: dataUrl })
 
-      let responseText = ''
+      // Use the bridge's chat with image — single call, no double
+      const result = await this.ipc.ai.chat(
+        this.sessionId!,
+        prompt,
+        { image: dataUrl, model: this.activeModel }
+      ) as { content: string; error?: string } | null
 
-      // Stream response
-      await this.ipc.invoke('ai:vision', {
-        model: this.activeModel,
-        messages: this.messages,
-      }) as { content: string } | null
-
-      // For streaming, we'd use the on handler, but for simplicity use invoke
-      const result = await this.ipc.invoke('ai:chat', {
-        model: this.activeModel,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-            images: [dataUrl],
-          },
-        ],
-      }) as { content: string } | null
-
-      responseText = result?.content || 'No response'
-
-      this.messages.push({ role: 'assistant', content: responseText })
+      const responseText = result?.content || result?.error || 'No response'
+      if (this.currentStreamText) {
+        // Streaming already added the message on 'done'
+      } else {
+        this.messages.push({ role: 'assistant', content: responseText })
+      }
       this.status = { count: this.messages.length, status: 'nominal' }
       this.streaming = false
 
@@ -226,26 +265,31 @@ export class VisionPlugin implements EarthEnginePlugin {
   }
 
   /**
-   * Send a text-only chat message (no image).
+   * Chat with native tool use via the AI bridge.
+   * Tools are passed to Ollama's tool-calling API — no fake pattern matching.
    */
-  async chat(text: string): Promise<string> {
-    if (!this.ipc || !this.ollamaHealthy || !this.activeModel) {
+  async chatWithTools(text: string): Promise<string> {
+    if (!this.ipc || !this.ollamaHealthy || !this.activeModel || !this.sessionId) {
       return 'Ollama not available'
     }
 
     this.streaming = true
+    this.currentStreamText = ''
     this.status = { ...this.status, status: 'loading' }
 
     try {
       this.messages.push({ role: 'user', content: text })
 
-      const result = await this.ipc.invoke('ai:chat', {
-        model: this.activeModel,
-        messages: this.messages,
-      }) as { content: string } | null
+      const result = await this.ipc.ai.chat(
+        this.sessionId,
+        text,
+        { model: this.activeModel }
+      ) as { content: string; error?: string } | null
 
-      const responseText = result?.content || 'No response'
-      this.messages.push({ role: 'assistant', content: responseText })
+      const responseText = result?.content || result?.error || 'No response'
+      if (!this.currentStreamText) {
+        this.messages.push({ role: 'assistant', content: responseText })
+      }
       this.status = { count: this.messages.length, status: 'nominal' }
       this.streaming = false
 
@@ -254,91 +298,32 @@ export class VisionPlugin implements EarthEnginePlugin {
       this.streaming = false
       this.status = { ...this.status, status: 'error', error: String(err) }
       return `Error: ${err}`
+    }
+  }
+
+  /**
+   * Execute a tool call from the AI bridge.
+   * The bridge broadcasts a tool_request, and we execute it here in the
+   * renderer where we have access to the Cesium viewer and action runner.
+   */
+  private async executeToolRequest(callId: string, toolName: string, args: Record<string, unknown>): Promise<void> {
+    if (!this.actionRunner || !this.ipc) {
+      this.ipc?.ai.rejectTool(callId, 'Action runner not available')
+      return
+    }
+
+    try {
+      const result = await this.actionRunner.run(toolName, args)
+      this.ipc.ai.resolveTool(callId, result)
+    } catch (err) {
+      this.ipc.ai.rejectTool(callId, err instanceof Error ? err.message : String(err))
     }
   }
 
   clearConversation(): void {
     this.messages = []
+    this.currentStreamText = ''
     this.status = { count: 0, status: 'nominal' }
-  }
-
-  /**
-   * Chat with tool-use — sends the prompt with available tools to the LLM.
-   * If the LLM returns tool calls, executes them and feeds results back.
-   */
-  async chatWithTools(text: string): Promise<string> {
-    if (!this.ipc || !this.ollamaHealthy || !this.activeModel) {
-      return 'Ollama not available'
-    }
-
-    this.streaming = true
-    this.status = { ...this.status, status: 'loading' }
-
-    try {
-      // Build context with live data summary
-      const liveSummary = this.buildLiveDataSummary()
-      const systemPrompt = `You are an analyst embedded in a geospatial intelligence workstation with a 3D Cesium globe.
-You have access to live data and tools. When the user asks about data, use the query_data tool.
-When they ask to go somewhere, use fly_to. When they ask to toggle layers, use set_layer_visibility.
-
-Live data currently loaded:
-${liveSummary}
-
-Available tools: fly_to, zoom_to_globe, set_layer_visibility, query_data, select_nearest, track_entity, stop_tracking, resolve_place`
-
-      this.messages.push({ role: 'user', content: text })
-
-      const result = await this.ipc.invoke('ai:chat', {
-        model: this.activeModel,
-        prompt: text,
-        context: systemPrompt,
-      }) as { content: string; error?: string } | null
-
-      let responseText = result?.content || result?.error || 'No response'
-
-      // Check if the response mentions wanting to query data and tool use is enabled
-      if (this.toolUseEnabled && this.actionRunner) {
-        const lowerResponse = responseText.toLowerCase()
-
-        // Simple intent detection — if the LLM mentions data, run a query
-        if (lowerResponse.includes('how many') || lowerResponse.includes('nearest') || lowerResponse.includes('closest') ||
-            lowerResponse.includes('count') || lowerResponse.includes('show me')) {
-          const queryResult = await this.actionRunner.run('query_data', {
-            scope: { kind: 'view' },
-            limit: 10,
-          })
-          if (queryResult.ok && Number(queryResult.count) > 0) {
-            const dataSummary = (queryResult.items as any[]).map((it: any) =>
-              `${it.label || it.id} (${it.type}) at ${(it.lat as number)?.toFixed(2)},${(it.lon as number)?.toFixed(2)}`
-            ).join('\n')
-            responseText += `\n\nLive data query found ${queryResult.count} objects:\n${dataSummary}`
-          } else {
-            responseText += `\n\nNo live data matching the query in current view.`
-          }
-        }
-
-        // Fly-to intent
-        if (lowerResponse.includes('fly to') || lowerResponse.includes('go to') || lowerResponse.includes('show me')) {
-          const placeMatch = text.match(/(?:fly to|go to|show me)\s+(.+)/i)
-          if (placeMatch) {
-            const flyResult = await this.actionRunner.run('fly_to', { target: placeMatch[1] })
-            if (flyResult.ok) {
-              responseText += `\n\nFlying to ${flyResult.label || placeMatch[1]} (${(flyResult.lat as number)?.toFixed(2)}, ${(flyResult.lon as number)?.toFixed(2)})`
-            }
-          }
-        }
-      }
-
-      this.messages.push({ role: 'assistant', content: responseText })
-      this.status = { count: this.messages.length, status: 'nominal' }
-      this.streaming = false
-
-      return responseText
-    } catch (err) {
-      this.streaming = false
-      this.status = { ...this.status, status: 'error', error: String(err) }
-      return `Error: ${err}`
-    }
   }
 
   /**
@@ -351,7 +336,6 @@ Available tools: fly_to, zoom_to_globe, set_layer_visibility, query_data, select
     this.status = { ...this.status, status: 'loading' }
 
     try {
-      // Parse the natural language query into an analyst query
       const lowerText = text.toLowerCase()
       const layers: string[] = []
       if (lowerText.includes('aircraft') || lowerText.includes('plane') || lowerText.includes('flight')) layers.push('aircraft')
@@ -393,14 +377,6 @@ Available tools: fly_to, zoom_to_globe, set_layer_visibility, query_data, select
       this.status = { ...this.status, status: 'error', error: String(err) }
       return `Error: ${err}`
     }
-  }
-
-  private buildLiveDataSummary(): string {
-    const byType: Record<string, number> = {}
-    for (const f of this.liveFeatures.values()) {
-      byType[f.type] = (byType[f.type] || 0) + 1
-    }
-    return Object.entries(byType).map(([type, count]) => `- ${type}: ${count}`).join('\n') || 'No live data loaded'
   }
 }
 

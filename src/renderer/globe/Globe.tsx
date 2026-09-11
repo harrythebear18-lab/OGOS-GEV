@@ -126,8 +126,9 @@ export default function Globe({
 
       // Tile loading — higher = fewer tiles loaded = faster (default 2)
       globe.maximumScreenSpaceError = 4
-      // Cache size — moderate since we viewport-cull entities (default 100)
-      globe.tileCacheSize = 500
+      // Cache size — keep small to avoid V8 heap exhaustion at high zoom.
+      // 100 tiles is enough for smooth panning; Cesium evicts LRU.
+      globe.tileCacheSize = 100
       // Don't load terrain until needed
       // depthTestAgainstTerrain = true prevents seeing through hills/mountains
       // and helps the camera collision system work properly

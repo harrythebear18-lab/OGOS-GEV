@@ -8,6 +8,7 @@ import { predictionEngine } from './services/prediction/prediction-engine'
 import { gridMonitor } from './services/grid/grid-monitor'
 import { networkMonitor } from './services/network/network-monitor'
 import { vrManager } from './services/vr/vr-manager'
+import { startClipServer, stopClipServer } from './services/clip-manager'
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 
@@ -135,6 +136,10 @@ app.whenReady().then(() => {
   console.log('[main] initializing VR manager...')
   vrManager.init()
   console.log('[main] VR manager initialized')
+
+  console.log('[main] starting CLIP server...')
+  startClipServer()
+  console.log('[main] CLIP server start requested')
 })
 
 app.on('window-all-closed', () => {
@@ -145,6 +150,7 @@ app.on('window-all-closed', () => {
   gridMonitor.stop()
   networkMonitor.stop()
   vrManager.shutdown()
+  stopClipServer()
   if (process.platform !== 'darwin') app.quit()
 })
 

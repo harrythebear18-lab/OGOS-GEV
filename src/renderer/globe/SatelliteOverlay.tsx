@@ -17,15 +17,14 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
 
     const satrec = satellite.twoline2satrec(ISS_TLE_LINE1, ISS_TLE_LINE2)
 
-    // ── Compute orbit ring in ECI, then convert all points to ECF at ONE epoch ──
-    // This gives a proper orbit ellipse, not a ground track.
-    // ISS orbital period: ~92.68 minutes. Use 92 minutes for one full revolution.
+    // ── Orbit ground track ──
+    // Each point uses its OWN GMST so the path represents the actual
+    // ground track the satellite traces over one orbit, properly
+    // accounting for Earth's rotation. This keeps the ISS dot ON the line.
     const orbitPeriodSeconds = 92 * 60
-    const stepSeconds = 20 // finer step for smoother ring
+    const stepSeconds = 20
 
-    function computeOrbitRing(epoch: Date): Cesium.Cartesian3[] {
-      // Use a single GMST for all points — this makes a proper orbit ring
-      const gmst = satellite.gstime(epoch)
+    function computeOrbitTrack(epoch: Date): Cesium.Cartesian3[] {
       const positions: Cesium.Cartesian3[] = []
 
       for (let i = 0; i <= orbitPeriodSeconds; i += stepSeconds) {
@@ -35,9 +34,9 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
         const pos = pv.position
         if (!pos || typeof pos !== 'object' || !('x' in pos)) continue
 
-        // Convert ECI → ECF using the SAME gmst for all points
+        // Each point gets its own GMST — real ground track, not frozen ellipse
+        const gmst = satellite.gstime(t)
         const ecf = satellite.eciToEcf(pos as { x: number; y: number; z: number }, gmst)
-        // satellite.js returns km, Cesium expects meters
         positions.push(new Cesium.Cartesian3(ecf.x * 1000, ecf.y * 1000, ecf.z * 1000))
       }
 
@@ -45,7 +44,6 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
     }
 
     // ── Satellite position: CallbackProperty for real-time SGP4 propagation ──
-    // This computes the ISS position from Cesium's clock every frame.
     function computeSatPosition(time: Cesium.JulianDate | undefined): Cesium.Cartesian3 {
       if (!time) return new Cesium.Cartesian3(0, 0, 0)
       const date = Cesium.JulianDate.toDate(time)
@@ -58,9 +56,9 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
       return new Cesium.Cartesian3(ecf.x * 1000, ecf.y * 1000, ecf.z * 1000)
     }
 
-    // Initial orbit ring at current time
+    // Initial orbit track at current time
     const now = new Date()
-    let orbitPositions = computeOrbitRing(now)
+    let orbitPositions = computeOrbitTrack(now)
 
     const orbitEntity = viewer.entities.add({
       name: 'ISS orbit',
@@ -97,14 +95,14 @@ export default function SatelliteOverlay({ viewer }: SatelliteOverlayProps) {
       },
     })
 
-    // Refresh orbit ring every 60 seconds to account for Earth's rotation
-    // (the ring slowly drifts in ECF as Earth rotates under the orbit)
+    // Refresh orbit track every 30 seconds — the ground track shifts as
+    // Earth rotates, so we recompute from the current Cesium clock time.
     const ringRefreshTimer = setInterval(() => {
       if (viewer.isDestroyed?.()) return
       const current = Cesium.JulianDate.toDate(viewer.clock.currentTime)
-      orbitPositions = computeOrbitRing(current)
+      orbitPositions = computeOrbitTrack(current)
       ;(orbitEntity.polyline as any).positions = new Cesium.ConstantProperty(orbitPositions)
-    }, 60_000)
+    }, 30_000)
 
     // Don't override the clock here — the ISS position callback already
     // reads from viewer.clock.currentTime, so it follows whatever clock

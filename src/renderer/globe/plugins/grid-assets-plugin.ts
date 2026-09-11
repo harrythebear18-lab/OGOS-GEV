@@ -162,6 +162,9 @@ export class GridAssetsPlugin implements EarthEnginePlugin {
           color,
           outlineColor: Cesium.Color.BLACK,
           outlineWidth: 1,
+          // 10,000 km — disables terrain occlusion for near-side entities
+          // but the globe still occludes far-side entities (Earth diameter ~12,742 km)
+          disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
         },
         label: label
           ? {
@@ -172,6 +175,7 @@ export class GridAssetsPlugin implements EarthEnginePlugin {
               outlineWidth: 2,
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               pixelOffset: new Cesium.Cartesian2(0, -10),
+              disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
             }
           : undefined,
         properties: {
@@ -212,9 +216,10 @@ export class GridAssetsPlugin implements EarthEnginePlugin {
         id,
         polyline: {
           positions: new Cesium.ConstantProperty(positions),
-          material: color,
-          width: 1.5,
-          arcType: Cesium.ArcType.NONE,
+          material: new Cesium.ColorMaterialProperty(color),
+          width: new Cesium.ConstantProperty(1.5),
+          arcType: Cesium.ArcType.GEODESIC,
+          clampToGround: true,
         },
       } as any)
     } else {

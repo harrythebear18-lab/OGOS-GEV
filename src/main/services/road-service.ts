@@ -16,6 +16,7 @@
  */
 
 import type { LngLat, RoadSegment, RoadResponse } from '@shared/types'
+import { featureCache } from './feature-cache'
 
 export type { RoadSegment, RoadResponse }
 
@@ -64,6 +65,15 @@ const HIGHWAY_COST: Record<string, number> = {
  */
 export async function fetchRoads(bounds: [LngLat, LngLat]): Promise<RoadResponse> {
   const [sw, ne] = bounds
+  const bboxNums: [number, number, number, number] = [sw.lng, sw.lat, ne.lng, ne.lat]
+
+  // Check disk cache first
+  const cached = await featureCache.get<RoadResponse>('roads', bboxNums)
+  if (cached) {
+    console.log('[roads] cache hit')
+    return cached
+  }
+
   const bbox = `${sw.lat},${sw.lng},${ne.lat},${ne.lng}`
 
   const query = `
@@ -71,7 +81,7 @@ export async function fetchRoads(bounds: [LngLat, LngLat]): Promise<RoadResponse
     (
       way["highway"](${bbox});
     );
-    out geom;
+    out geom 15000;
   `
 
   let lastError: Error | null = null
@@ -126,7 +136,10 @@ export async function fetchRoads(bounds: [LngLat, LngLat]): Promise<RoadResponse
         })
       }
 
-      return { segments, bounds }
+      const result = { segments, bounds }
+      // Write to disk cache (async, don't block)
+      featureCache.set('roads', bboxNums, result).catch(() => {})
+      return result
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e))
       continue

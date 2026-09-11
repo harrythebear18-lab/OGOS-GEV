@@ -11,6 +11,7 @@ import { anomalyPlugin } from './anomaly-plugin'
 import { hydrologyPlugin } from './hydrology-plugin'
 import { waterPlugin } from './water-plugin'
 import { roadsPlugin } from './roads-plugin'
+import { infrastructurePlugin } from './infrastructure-plugin'
 import { routesPlugin } from './routes-plugin'
 import { canopyPlugin } from './canopy-plugin'
 import { behaviorEnginePlugin } from './behavior-plugin'
@@ -47,6 +48,7 @@ pluginManager.register([
   hydrologyPlugin,
   waterPlugin,
   roadsPlugin,
+  infrastructurePlugin,
   // Tier 2 — Movement & Behaviour
   routesPlugin,
   canopyPlugin,
@@ -92,6 +94,7 @@ export {
   hydrologyPlugin,
   waterPlugin,
   roadsPlugin,
+  infrastructurePlugin,
   routesPlugin,
   canopyPlugin,
   behaviorEnginePlugin,

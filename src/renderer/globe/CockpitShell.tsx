@@ -21,6 +21,7 @@ export interface DockConfig {
   leftVisible: boolean
   rightVisible: boolean
   activeLeftTab: 'layers' | 'plugins'
+  activeRightTab: 'inspector' | 'ai'
 }
 
 interface CockpitShellProps {
@@ -29,6 +30,7 @@ interface CockpitShellProps {
   leftLayers: ReactNode
   leftPlugins: ReactNode
   rightPanel: ReactNode
+  aiPanel: ReactNode
   statusBar: ReactNode
   children: ReactNode  // globe canvas
 }
@@ -42,6 +44,7 @@ function CockpitShell({
   leftLayers,
   leftPlugins,
   rightPanel,
+  aiPanel,
   statusBar,
   children,
 }: CockpitShellProps) {
@@ -128,7 +131,18 @@ function CockpitShell({
         <>
           <div style={{ ...shellStyle.rightDock, width: config.rightWidth }}>
             <div style={shellStyle.tabBar}>
-              <span style={shellStyle.tabTitle}>INSPECTOR</span>
+              <button
+                style={shellStyle.tab(config.activeRightTab === 'inspector')}
+                onClick={() => onConfigChange({ ...config, activeRightTab: 'inspector' })}
+              >
+                INSPECTOR
+              </button>
+              <button
+                style={shellStyle.tab(config.activeRightTab === 'ai')}
+                onClick={() => onConfigChange({ ...config, activeRightTab: 'ai' })}
+              >
+                AI CHAT
+              </button>
               <button
                 style={shellStyle.closeBtn}
                 onClick={() => onConfigChange({ ...config, rightVisible: false })}
@@ -138,7 +152,7 @@ function CockpitShell({
               </button>
             </div>
             <div style={shellStyle.tabContent}>
-              {rightPanel}
+              {config.activeRightTab === 'inspector' ? rightPanel : aiPanel}
             </div>
           </div>
           <div

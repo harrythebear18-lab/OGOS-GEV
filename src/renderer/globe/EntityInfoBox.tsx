@@ -26,6 +26,18 @@ const TYPE_LABELS: Record<string, string> = {
   'storm-track': 'STORM TRACK',
   'grid-asset': 'GRID ASSET',
   'grid-ic': 'GRID INTERCONNECT',
+  'infra': 'INFRASTRUCTURE',
+  'infra:airport': 'AIRPORT (OSM)',
+  'infra:helipad': 'HELIPAD (OSM)',
+  'infra:power_plant': 'POWER PLANT (OSM)',
+  'infra:substation': 'SUBSTATION (OSM)',
+  'infra:generator': 'GENERATOR (OSM)',
+  'infra:transformer': 'TRANSFORMER (OSM)',
+  'infra:tower': 'TRANSMISSION TOWER (OSM)',
+  'infra:monitoring_station': 'MONITORING STATION (OSM)',
+  'infra:lighthouse': 'LIGHTHOUSE (OSM)',
+  'infra:navigation_buoy': 'NAVIGATION BUOY (OSM)',
+  'infra:weather_station': 'WEATHER STATION (OSM)',
   pred: 'PREDICTION ALERT',
   'pred-track': 'PREDICTION TRACK',
   sst: 'SST ANOMALY',
@@ -49,6 +61,8 @@ function formatProperty(key: string, value: unknown): string {
     if (key === 'intensity') return `${value.toFixed(0)} kA`
     if (key === 'confidence') return `${(value * 100).toFixed(0)}%`
     if (key === 'capacityMw') return `${value.toFixed(0)} MW`
+    if (key === 'outputMw') return `${value.toFixed(0)} MW`
+    if (key === 'voltageKv') return `${value.toFixed(0)} kV`
     if (key === 'windSpeedKt') return `${value.toFixed(0)} kt`
     if (key === 'pressureMB') return `${value.toFixed(0)} mb`
     if (key === 'waterTemp' || key === 'airTemp') return `${value.toFixed(1)} °C`
@@ -65,10 +79,11 @@ function formatProperty(key: string, value: unknown): string {
 const PRIORITY_KEYS = [
   'callsign', 'icao24', 'mmsi', 'name', 'place', 'shipType',
   'origin', 'destination', 'satellite', 'confidence',
+  'icao', 'iata', 'osmType', 'subtype', 'fuel', 'operator',
   'mag', 'brightness', 'frp', 'intensity', 'polarity',
   'velocity', 'heading', 'altitude', 'speed', 'depth',
   'windSpeedKt', 'pressureMB', 'classification', 'intensity',
-  'type', 'source', 'capacityMw', 'energyType', 'owner', 'active',
+  'type', 'source', 'capacityMw', 'outputMw', 'voltageKv', 'energyType', 'owner', 'active',
   'waterTemp', 'airTemp', 'windSpeed', 'pressure', 'salinity',
   'severity', 'confidence', 'description',
   'ip', 'port', 'country', 'city', 'process',
@@ -78,7 +93,12 @@ const PRIORITY_KEYS = [
 function EntityInfoBox({ entity, onClose }: EntityInfoBoxProps) {
   if (!entity) return null
 
-  const typeLabel = TYPE_LABELS[entity.type] ?? entity.type.toUpperCase()
+  // For infra entities, use the specific subtype from the property bag if available
+  let typeKey = entity.type
+  if (entity.type === 'infra' && entity.properties?.type) {
+    typeKey = `infra:${entity.properties.type}`
+  }
+  const typeLabel = TYPE_LABELS[typeKey] ?? TYPE_LABELS[entity.type] ?? entity.type.toUpperCase()
   const propKeys = Object.keys(entity.properties)
 
   // Sort properties: priority keys first (in defined order), then alphabetical

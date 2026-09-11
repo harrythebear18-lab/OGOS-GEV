@@ -415,6 +415,52 @@ export interface WaterResponse {
 }
 
 /* ------------------------------------------------------------------ */
+/* Infrastructure (OSM Overpass — airports, power, substations, buoys) */
+/* ------------------------------------------------------------------ */
+
+export type InfrastructureType =
+  | 'airport'
+  | 'helipad'
+  | 'power_plant'
+  | 'substation'
+  | 'generator'
+  | 'transformer'
+  | 'monitoring_station'
+  | 'lighthouse'
+  | 'navigation_buoy'
+  | 'weather_station'
+  | 'tower'
+
+export interface InfrastructureFeature {
+  id: string
+  type: InfrastructureType
+  /** OSM primary tag value (e.g. 'aerodrome', 'plant', 'substation'). */
+  osmType: string
+  /** Sub-classification (e.g. plant:source=gas, aerodrome:type=public). */
+  subtype?: string
+  /** ICAO / IATA code for airports, if tagged. */
+  icao?: string
+  iata?: string
+  /** Power plant generator output (MW) if tagged. */
+  outputMw?: number
+  /** Voltage in kV for substations/transformers, if tagged. */
+  voltageKv?: number
+  /** Plant fuel/source (gas, coal, nuclear, hydro, wind, solar, etc.). */
+  fuel?: string
+  /** Operator / owner, if tagged. */
+  operator?: string
+  /** Polygon outline for area features (centroids are computed by the renderer). */
+  coords: LngLat[]
+  name?: string
+}
+
+export interface InfrastructureResponse {
+  features: InfrastructureFeature[]
+  bounds: [LngLat, LngLat]
+  error?: string
+}
+
+/* ------------------------------------------------------------------ */
 /* Roads (OSM Overpass)                                                */
 /* ------------------------------------------------------------------ */
 

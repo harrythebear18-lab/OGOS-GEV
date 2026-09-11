@@ -56,10 +56,16 @@ const api = {
     roads: (bounds: unknown) => ipcRenderer.invoke(IPC.ROAD_FETCH, { bounds }),
   },
 
+  /* ── Infrastructure (OSM Overpass — airports, power, substations, buoys) ── */
+  infrastructure: {
+    fetch: (bounds: unknown) => ipcRenderer.invoke(IPC.INFRA_FETCH, { bounds }),
+  },
+
   /* ── Imagery ── */
   imagery: {
     search: (req: unknown) => ipcRenderer.invoke(IPC.SENTINEL_SEARCH, req),
     layers: () => ipcRenderer.invoke(IPC.SENTINEL_LAYERS),
+    getTle: () => ipcRenderer.invoke(IPC.SAT_TLE_GET),
   },
 
   /* ── Weather ── */
@@ -185,13 +191,43 @@ const api = {
     dnsTest: () => ipcRenderer.invoke(IPC.NET_DNSTEST_RUN),
   },
 
-  /* ── AI ── */
+  /* ── AI Bridge ── */
   ai: {
     health: () => ipcRenderer.invoke(IPC.AI_HEALTH),
-    chat: (prompt: string, model?: string, context?: string) =>
-      ipcRenderer.invoke(IPC.AI_CHAT, { prompt, model, context }),
+
+    // Session management
+    createSession: () => ipcRenderer.invoke('ai:session:create'),
+    destroySession: (sessionId: string) => ipcRenderer.invoke('ai:session:destroy', { sessionId }),
+    getSession: (sessionId: string) => ipcRenderer.invoke('ai:session:get', { sessionId }),
+
+    // Chat with tools (streaming via ai:chat:stream events)
+    chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string }) =>
+      ipcRenderer.invoke(IPC.AI_CHAT, { sessionId, prompt, image: opts?.image, model: opts?.model }),
+
+    // Vision (one-shot viewport analysis)
     vision: (prompt: string, image: string, model?: string) =>
       ipcRenderer.invoke(IPC.AI_VISION, { prompt, image, model }),
+
+    // Tool registration (renderer registers action-runner tools)
+    registerTools: (tools: unknown[]) => ipcRenderer.invoke('ai:tools:register', { tools }),
+
+    // Tool call resolution (renderer sends back tool results)
+    resolveTool: (callId: string, result: unknown) =>
+      ipcRenderer.invoke('ai:tool:resolve', { callId, result }),
+    rejectTool: (callId: string, error: string) =>
+      ipcRenderer.invoke('ai:tool:reject', { callId, error }),
+
+    // Stream listener — renderer subscribes to tokens, tool calls, done
+    onStream: (cb: (data: { sessionId: string; type: string; token?: string; toolName?: string; args?: unknown; result?: unknown; content?: string; error?: string; callId?: string }) => void) => {
+      const handler = (_event: unknown, data: unknown) => cb(data as any)
+      ipcRenderer.on(IPC.AI_CHAT_STREAM, handler)
+      return () => ipcRenderer.off(IPC.AI_CHAT_STREAM, handler)
+    },
+
+    // Legacy chat (backward compat)
+    chatLegacy: (prompt: string, model?: string, context?: string) =>
+      ipcRenderer.invoke('ai:chat:legacy', { prompt, model, context }),
+
     clipHealth: () => ipcRenderer.invoke(IPC.AI_CLIP_HEALTH),
     clipSearch: (query: string, bounds?: unknown) =>
       ipcRenderer.invoke(IPC.AI_CLIP_SEARCH, { query, bounds }),
