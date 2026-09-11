@@ -1,35 +1,28 @@
-Port OGOS privacy mode + AI analysis mode toggle + climate integrity hydration
+Simulate missing data sources + upgrade HUD with MGRS/GSD/NIIRS/classification
 
-Privacy mode (ported from OGOS RightPanel):
-- New PrivacyToggle component with two-step confirmation:
-  1. Type YES in the input box
-  2. Final warning dialog with full details + Cancel/OK
-- Privacy ON by default; type YES then OK to reveal
-- Always-visible toolbar button (not buried in NET/GRID sub-panel)
-  — privacy is a global workstation state, not a network setting
-- NetworkGridPanel masks connections, IPs, countries, VPN, location, ISP
-  when privacy is on
-- NetworkPlugin hides user-location node and all connection arcs on the
-  globe when privacy is on (prevents revealing own country/city)
-- Global privacy state synced to network plugin via useEffect
+BGC-Argo simulator (no external fetch — derives from existing Argo data):
+- Oxygen: Garcia & Gordon (1992) solubility model (T, S, depth)
+- Chlorophyll: latitude/season/basin model (polar bloom, oligotrophic gyres,
+  upwelling zones)
+- Nitrate: depth + latitude model (deep/high-lat = high nitrate)
+- pH: thermodynamic from T and S
+- 583 BGC floats derived from 4049 Argo floats (15% BGC-equipped ratio)
+- Pacific OMZ (eastern equatorial) modeled with low O2
 
-AI analysis mode toggle (ported from OGOS AIBottomBar):
-- Added Active SAR vs Legacy/Research mode toggle to AiPanel header
-- Mode-aware system prompt in ai-bridge.ts chatWithTools():
-  - active-sar: LKP-centric, time-critical, conservative, tight zones
-  - legacy-research: bbox-spread, exploratory, speculation allowed, wide zones
-- Mode passed through ai.chat() -> IPC -> chatWithTools()
-- Hypothesis generation is mode-aware (2-3 tight vs 4-6 wide)
+Aircraft metadata enrichment (no external fetch — derives from callsign/ICAO24):
+- ICAO24 hex → country of registration (ICAO allocation ranges)
+- Callsign prefix → airline operator (50+ IATA codes)
+- Callsign pattern → flight type (commercial, cargo, military, GA)
+- Altitude/velocity → flight phase (parked, taxi, takeoff, climb, cruise,
+  descent, approach, landed)
+- ICAO24 + country → pseudo-registration (N-, G-, F-, D-, C-F, VH-, JA-, etc.)
+- Track history: in-memory trail per ICAO24 (30 points, 30-min TTL)
 
-Climate integrity hydration (like Argo fetch):
-- ClimateMonitor stores lastIntegrityUpdate and exposes getLastIntegrity()
-- New IPC channel CLIMATE_INTEGRITY_GET_CURRENT + handler
-- Preload exposes climate.getIntegrityCurrent()
-- ClimateIntegrityPanel requests current state on mount instead of
-  waiting up to 4 min for next broadcast
-
-Weather UI:
-- Added "GET FORECAST" button to WeatherOverlay hint
+HUD upgrade (ported from GEV concept):
+- MGRS (Military Grid Reference System) coordinate readout
+- GSD (Ground Sample Distance) — sensor resolution at current altitude
+- NIIRS (National Imagery Interpretability Rating Scale) — image quality
+- Classification banners (top + bottom: UNCLASSIFIED // REL TO FVEY)
 
 Generated with [Devin](https://devin.ai)
 

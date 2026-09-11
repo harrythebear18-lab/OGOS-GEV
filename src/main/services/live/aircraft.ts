@@ -10,6 +10,7 @@
  */
 
 import type { LiveFeature } from '@shared/types'
+import { enrichAircraftBatch } from './aircraft-metadata'
 
 interface OpenSkyResponse {
   time: number
@@ -81,7 +82,7 @@ export async function getAircraftFeatures(): Promise<LiveFeature[]> {
       })
     }
     console.log(`[live/aircraft] ${features.length} aircraft tracked`)
-    return features
+    return enrichAircraftBatch(features)
   } catch (err) {
     console.warn('[live/aircraft] poll failed:', err)
     return []

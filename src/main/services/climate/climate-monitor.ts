@@ -268,6 +268,14 @@ class ClimateMonitor {
         }
       }
 
+      // ── Simulate BGC-Argo from existing Argo data (no external fetch) ──
+      const argoResult = fetchResults[5] // ARGO is at index 5 in sourceConfigs
+      if (argoResult) {
+        const bgcResult = ErddapFetcher.simulateBGCArgo(argoResult)
+        allStations.push(...bgcResult.stations)
+        Object.assign(allMeasurements, bgcResult.measurements)
+      }
+
       // ── Fetch storms, space weather, and live feeds in parallel ──
       const [stormsResult, spaceWeatherResult, lightning, aircraft, vessels, fires, earthquakes] =
         await Promise.allSettled([
