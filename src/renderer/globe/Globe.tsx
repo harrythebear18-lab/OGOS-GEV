@@ -167,7 +167,7 @@ export default function Globe({
       controller.enableRotate = true
       controller.enableTranslate = true
       controller.enableTilt = true
-      controller.enableLook = true
+      controller.enableLook = false
 
       // Zoom — wheel zooms toward cursor, not center of screen
       controller.zoomEventTypes = [
@@ -181,20 +181,17 @@ export default function Globe({
         Cesium.CameraEventType.PINCH,
       ]
 
-      // Rotate — RIGHT drag to orbit/rotate the globe
+      // Rotate — RIGHT drag to rotate the globe (Cesium default)
       controller.rotateEventTypes = [
         Cesium.CameraEventType.RIGHT_DRAG,
       ]
+      controller.enableRotate = true
 
-      // Tilt — MIDDLE drag to tilt (or Ctrl+drag)
-      controller.tiltEventTypes = [
-        Cesium.CameraEventType.MIDDLE_DRAG,
-      ]
+      // Tilt — disabled on middle (middle is now orbit)
+      controller.tiltEventTypes = []
 
-      // Look — Ctrl+Left drag (rarely used, but keep enabled)
-      controller.lookEventTypes = [
-        { eventType: Cesium.CameraEventType.LEFT_DRAG, modifier: Cesium.KeyboardEventModifier.CTRL },
-      ]
+      // Look — disabled (conflicts with custom orbit)
+      controller.lookEventTypes = []
 
       // ── Sensitivity ──
       // Zoom — moderate, controlled (default 5.0)
@@ -219,6 +216,128 @@ export default function Globe({
       controller.inertiaSpin = 0.1  // rotation/orbit inertia — was defaulting to 0.9 (floaty)
 
       console.log('[Globe] camera controls tuned — collision + consistent inertia')
+
+      // ── CURSOR-CENTERED ORBIT (right-drag) ──
+      // Picks the terrain point under the cursor on right-down, then
+      // orbits the camera around that point using direct vector math.
+      // No lookAt/lookAtTransform — just sets position/direction/up/right directly.
+      const orbitState = {
+        target: null as Cesium.Cartesian3 | null,
+        offset: null as Cesium.Cartesian3 | null,
+        lastX: 0,
+        lastY: 0,
+      }
+      const orbitHandler = new Cesium.ScreenSpaceEventHandler(scene.canvas)
+
+      orbitHandler.setInputAction((event: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
+        // Fully disable default controller during orbit
+        controller.enableTranslate = false
+        controller.enableZoom = false
+        controller.enableRotate = false
+        controller.enableTilt = false
+        controller.enableLook = false
+
+        const ray = v.camera.getPickRay(event.position)
+        if (!ray) { console.log('[Globe] orbit — no ray'); return }
+        let picked = v.scene.globe.pick(ray, v.scene)
+        if (!picked) {
+          const ellipsoid = v.scene.globe.ellipsoid
+          const isect = Cesium.IntersectionTests.rayEllipsoid(ray, ellipsoid)
+          if (isect) picked = Cesium.Ray.getPoint(ray, isect.start)
+        }
+        if (!picked) { return }
+
+        orbitState.target = picked
+        // Store initial offset vector from target to camera
+        orbitState.offset = Cesium.Cartesian3.subtract(v.camera.position, picked, new Cesium.Cartesian3())
+        orbitState.lastX = event.position.x
+        orbitState.lastY = event.position.y
+      }, Cesium.ScreenSpaceEventType.MIDDLE_DOWN)
+
+      orbitHandler.setInputAction((event: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
+        if (!orbitState.target || !orbitState.offset) return
+
+        const dx = event.endPosition.x - orbitState.lastX
+        const dy = event.endPosition.y - orbitState.lastY
+        orbitState.lastX = event.endPosition.x
+        orbitState.lastY = event.endPosition.y
+
+        const sens = 0.01
+        const target = orbitState.target
+        // Rotate the CURRENT offset (not a clone of the original) — accumulate rotation
+        let offset = orbitState.offset
+
+        // Up axis at target (normal to ellipsoid)
+        const up = Cesium.Cartesian3.normalize(target, new Cesium.Cartesian3())
+
+        // Horizontal drag → rotate offset around up axis
+        if (Math.abs(dx) > 0.01) {
+          const hAngle = -dx * sens
+          const hQuat = Cesium.Quaternion.fromAxisAngle(up, hAngle, new Cesium.Quaternion())
+          const hMat = Cesium.Matrix3.fromQuaternion(hQuat, new Cesium.Matrix3())
+          offset = Cesium.Matrix3.multiplyByVector(hMat, offset, new Cesium.Cartesian3())
+        }
+
+        // Vertical drag → rotate offset around right axis
+        if (Math.abs(dy) > 0.01) {
+          // Right = cross(up, offset) normalized
+          const right = Cesium.Cartesian3.cross(up, offset, new Cesium.Cartesian3())
+          const rightLen = Cesium.Cartesian3.magnitude(right)
+          if (rightLen > 1e-10) {
+            Cesium.Cartesian3.normalize(right, right)
+
+            // Clamp pitch so camera doesn't flip over the pole
+            const currentAngle = Cesium.Cartesian3.angleBetween(offset, up)
+            const vAngle = -dy * sens
+            const newAngle = Cesium.Math.clamp(currentAngle + vAngle, 0.05, Math.PI - 0.05)
+            const actualV = newAngle - currentAngle
+            if (Math.abs(actualV) > 1e-6) {
+              const vQuat = Cesium.Quaternion.fromAxisAngle(right, actualV, new Cesium.Quaternion())
+              const vMat = Cesium.Matrix3.fromQuaternion(vQuat, new Cesium.Matrix3())
+              offset = Cesium.Matrix3.multiplyByVector(vMat, offset, new Cesium.Cartesian3())
+            }
+          }
+        }
+
+        // Store the new offset for next frame (accumulate)
+        orbitState.offset = offset
+
+        // New camera position = target + rotated offset
+        const newPos = Cesium.Cartesian3.add(target, offset, new Cesium.Cartesian3())
+
+        // Direction = look at target
+        const newDir = Cesium.Cartesian3.subtract(target, newPos, new Cesium.Cartesian3())
+        Cesium.Cartesian3.normalize(newDir, newDir)
+
+        // Up = cross(right, direction) — use ellipsoid up for stable orientation
+        const newRight = Cesium.Cartesian3.cross(newDir, up, new Cesium.Cartesian3())
+        Cesium.Cartesian3.normalize(newRight, newRight)
+        const newUp = Cesium.Cartesian3.cross(newRight, newDir, new Cesium.Cartesian3())
+        Cesium.Cartesian3.normalize(newUp, newUp)
+
+        // Use setView for a clean camera state update
+        v.camera.setView({
+          destination: newPos,
+          orientation: {
+            direction: newDir,
+            up: newUp,
+          },
+        })
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+
+      orbitHandler.setInputAction(() => {
+        orbitState.target = null
+        orbitState.offset = null
+        // Re-enable default controller
+        controller.enableTranslate = true
+        controller.enableZoom = true
+        controller.enableRotate = true
+        controller.enableTilt = true
+        controller.enableLook = false  // keep look disabled
+      }, Cesium.ScreenSpaceEventType.MIDDLE_UP)
+
+      // Store for cleanup
+      ;(v as any)._orbitHandler = orbitHandler
 
       // Hide credit display
       try { (v as any).creditDisplay.container.style.display = 'none' } catch (e) {
@@ -315,6 +434,8 @@ export default function Globe({
       }
       if (viewerRef.current) {
         try {
+          const ov = viewerRef.current as any
+          if (ov._orbitHandler) { ov._orbitHandler.destroy(); ov._orbitHandler = null }
           viewerRef.current.destroy()
           console.log('[Globe] viewer destroyed')
         } catch (e) {

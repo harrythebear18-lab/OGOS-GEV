@@ -75,32 +75,57 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
   const tilesX = maxTile.x - minTile.x + 1
   const tilesY = maxTile.y - minTile.y + 1
 
-  // ── Load and merge DEM tiles ──
-  const tileGrids: (number | null)[][][][] = []
+  // ── Load DEM tiles in parallel (not sequential) ──
+  const tilePromises: Promise<{ tx: number; ty: number; grid: (number | null)[][] }>[] = []
   for (let ty = 0; ty < tilesY; ty++) {
-    tileGrids[ty] = []
     for (let tx = 0; tx < tilesX; tx++) {
-      const tile = await loadTile(minTile.x + tx, minTile.y + ty, effectiveZoom)
-      tileGrids[ty][tx] = tile.grid
+      const fx = tx, fy = ty
+      tilePromises.push(
+        loadTile(minTile.x + fx, minTile.y + fy, effectiveZoom).then((tile) => ({ tx: fx, ty: fy, grid: tile.grid }))
+      )
     }
   }
+  const tiles = await Promise.all(tilePromises)
 
-  const grid: (number | null)[][] = []
-  for (let ty = 0; ty < tilesY; ty++) {
-    for (let row = 0; row < tileGrids[ty][0].length; row++) {
-      const mergedRow: (number | null)[] = []
-      for (let tx = 0; tx < tilesX; tx++) {
-        const tileRow = tileGrids[ty][tx][row]
-        if (tileRow) mergedRow.push(...tileRow)
-      }
-      grid.push(mergedRow)
-    }
-  }
+  // Build tile lookup
+  const tileMap = new Map<string, (number | null)[][]>()
+  for (const t of tiles) tileMap.set(`${t.tx},${t.ty}`, t.grid)
 
-  const height = grid.length
-  const width = grid[0]?.length ?? 0
+  // Merge into flat typed array — Float32Array with NaN sentinel for null
+  const tileH = tiles[0]?.grid.length ?? 0
+  const tileW = tiles[0]?.grid[0]?.length ?? 0
+  const width = tilesX * tileW
+  const height = tilesY * tileH
+
   if (width === 0 || height === 0) {
     return { flowPaths: [], pools: [], floodZones: [], watershedDivides: [], rainfallMm }
+  }
+
+  // Flat Float32Array — NaN = no data. Much faster than (number|null)[][]
+  const filled = new Float32Array(width * height)
+  const original = new Float32Array(width * height)
+
+  for (let ty = 0; ty < tilesY; ty++) {
+    for (let tx = 0; tx < tilesX; tx++) {
+      const tg = tileMap.get(`${tx},${ty}`)!
+      for (let row = 0; row < tg.length; row++) {
+        const srcRow = tg[row]
+        if (!srcRow) continue
+        const dstY = ty * tileH + row
+        for (let col = 0; col < srcRow.length; col++) {
+          const val = srcRow[col]
+          const dstX = tx * tileW + col
+          const i = dstY * width + dstX
+          if (val == null) {
+            filled[i] = NaN
+            original[i] = NaN
+          } else {
+            filled[i] = val
+            original[i] = val
+          }
+        }
+      }
+    }
   }
 
   const lngStep = (ne.lng - sw.lng) / width
@@ -111,9 +136,9 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
   const cellSizeM = gridWidthM / width
   const cellAreaM2 = cellSizeM * cellSizeM
 
-  // ── Step 1: Fill depressions (Priority-Flood, Barnes 2014) ──
-  // This ensures continuous flow to the edge without artificial pits.
-  const filled = fillDepressions(grid, width, height)
+  // ── Step 1: Priority-Flood depression filling (Barnes 2014) ──
+  // Proper implementation with binary heap — O(n log n), correct cascading fills
+  priorityFlood(filled, width, height)
 
   // ── Step 2: D8 flow direction with diagonal correction ──
   const flowDir = new Int8Array(width * height).fill(-1)
@@ -121,17 +146,17 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const e = filled[y]?.[x]
-      if (e == null) continue
+      const i = idx(x, y)
+      const e = filled[i]
+      if (isNaN(e)) continue
       let maxSlope = 0
       let bestDir = -1
       for (let d = 0; d < 8; d++) {
         const nx = x + DX[d]
         const ny = y + DY[d]
         if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue
-        const ne2 = filled[ny]?.[nx]
-        if (ne2 == null) continue
-        // Slope = drop / distance (diagonal correction)
+        const ne2 = filled[ny * width + nx]
+        if (isNaN(ne2)) continue
         const drop = e - ne2
         const slope = drop / DIST_WEIGHT[d]
         if (slope > maxSlope) {
@@ -139,7 +164,7 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
           bestDir = d
         }
       }
-      flowDir[idx(x, y)] = bestDir
+      flowDir[i] = bestDir
     }
   }
 
@@ -163,7 +188,7 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
   // Kahn's topological sort
   const queue: number[] = []
   for (let i = 0; i < width * height; i++) {
-    if (inDegree[i] === 0 && filled[Math.floor(i / width)]?.[i % width] != null) {
+    if (inDegree[i] === 0 && !isNaN(filled[i])) {
       queue.push(i)
     }
   }
@@ -244,13 +269,13 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
       const lat = ne.lat - cy * latStep
       path.push({ lng, lat })
 
-      const elev = filled[cy]?.[cx]
-      if (elev != null && prevElev != null) {
+      const elev = filled[cy * width + cx]
+      if (!isNaN(elev) && prevElev != null) {
         const drop = prevElev - elev
         if (drop > 0) maxSlope = Math.max(maxSlope, drop / cellSizeM)
         flowLengthM += cellSizeM * DIST_WEIGHT[flowDir[ci] >= 0 ? flowDir[ci] : 0]
       }
-      prevElev = elev
+      prevElev = isNaN(elev) ? null : elev
 
       if (flowDir[ci] < 0) break
       const d = flowDir[ci]
@@ -301,9 +326,9 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
     for (let x = 1; x < width - 1; x++) {
       const i = idx(x, y)
       if (poolVisited[i]) continue
-      const origElev = grid[y]?.[x]
-      const fillElev = filled[y]?.[x]
-      if (origElev == null || fillElev == null) continue
+      const origElev = original[i]
+      const fillElev = filled[i]
+      if (isNaN(origElev) || isNaN(fillElev)) continue
       if (fillElev <= origElev) continue  // not a depression
 
       // Flood fill the depression cluster
@@ -316,9 +341,9 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
         if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) continue
         const pidx = idx(p.x, p.y)
         if (poolVisited[pidx]) continue
-        const pOrig = grid[p.y]?.[p.x]
-        const pFill = filled[p.y]?.[p.x]
-        if (pOrig == null || pFill == null) continue
+        const pOrig = original[pidx]
+        const pFill = filled[pidx]
+        if (isNaN(pOrig) || isNaN(pFill)) continue
         if (pFill <= pOrig) continue  // not part of this depression
 
         poolVisited[pidx] = 1
@@ -372,9 +397,9 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
       const row1 = Math.round((ne.lat - p1.lat) / latStep)
       const col2 = Math.round((p2.lng - sw.lng) / lngStep)
       const row2 = Math.round((ne.lat - p2.lat) / latStep)
-      const e1 = filled[row1]?.[col1]
-      const e2 = filled[row2]?.[col2]
-      if (e1 == null || e2 == null) continue
+      const e1 = filled[row1 * width + col1]
+      const e2 = filled[row2 * width + col2]
+      if (isNaN(e1) || isNaN(e2)) continue
 
       const drop = Math.abs(e2 - e1)
       const slope = drop / distM
@@ -412,7 +437,7 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
   }
 
   // ── Step 8: Watershed divides as actual ridge polylines ──
-  const watershedDivides = findWatershedDivides(flowDir, accumulation, filled, height, width, bounds, cellSizeM)
+  const watershedDivides = findWatershedDivides(flowDir, accumulation, filled, width, height, bounds, cellSizeM)
 
   return {
     flowPaths: flowPaths.slice(0, 80),
@@ -425,57 +450,98 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
 
 /**
  * Priority-Flood depression filling (Barnes 2014).
- * Uses a simple priority approach: process cells in order of elevation,
- * filling depressions to the level of their lowest neighbor.
- *
- * This is a simplified version using a sorted array instead of a true
- * priority queue for portability. For large grids, a proper heap would
- * be faster, but this is correct and avoids native dependencies.
+ * Proper implementation with a binary min-heap.
+ * O(n log n) — processes cells from lowest elevation, filling
+ * depressions to the spill point. Handles cascading fills correctly.
  */
-function fillDepressions(grid: (number | null)[][], width: number, height: number): (number | null)[][] {
-  // Copy the grid
-  const filled: (number | null)[][] = grid.map((row) => row.slice())
-
-  // Collect all valid cells with their indices, sorted by elevation
-  const cells: { x: number; y: number; elev: number }[] = []
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const e = grid[y]?.[x]
-      if (e != null) cells.push({ x, y, elev: e })
-    }
-  }
-  cells.sort((a, b) => a.elev - b.elev)
-
-  const processed = new Uint8Array(width * height)
+function priorityFlood(filled: Float32Array, width: number, height: number): void {
+  const closed = new Uint8Array(width * height)
   const idx = (x: number, y: number) => y * width + x
 
-  // Process from lowest to highest
-  for (const cell of cells) {
-    const i = idx(cell.x, cell.y)
-    if (processed[i]) continue
+  // Binary min-heap of [elevation, cellIndex]
+  const heap: number[] = []  // flat: [elev0, idx0, elev1, idx1, ...]
+  let heapSize = 0
 
-    // Find the minimum filled neighbor elevation
-    let minNeighbor = Infinity
-    for (let d = 0; d < 8; d++) {
-      const nx = cell.x + DX[d]
-      const ny = cell.y + DY[d]
-      if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-        minNeighbor = -Infinity  // edge cells drain off-grid
-        break
-      }
-      const ne = filled[ny]?.[nx]
-      if (ne != null && ne < minNeighbor) minNeighbor = ne
+  function heapPush(elev: number, cellIdx: number): void {
+    let i = heapSize
+    heap[heapSize * 2] = elev
+    heap[heapSize * 2 + 1] = cellIdx
+    heapSize++
+    // bubble up
+    while (i > 0) {
+      const parent = (i - 1) >> 1
+      if (heap[parent * 2] <= heap[i * 2]) break
+      // swap
+      const te = heap[parent * 2], ti = heap[parent * 2 + 1]
+      heap[parent * 2] = heap[i * 2]
+      heap[parent * 2 + 1] = heap[i * 2 + 1]
+      heap[i * 2] = te
+      heap[i * 2 + 1] = ti
+      i = parent
     }
-
-    // If this cell is lower than all neighbors (and not on edge), fill to min neighbor
-    if (minNeighbor !== Infinity && minNeighbor !== -Infinity && cell.elev < minNeighbor) {
-      filled[cell.y]![cell.x] = minNeighbor
-    }
-
-    processed[i] = 1
   }
 
-  return filled
+  function heapPop(): number {
+    const cellIdx = heap[1]
+    heapSize--
+    if (heapSize > 0) {
+      // move last to root, sift down
+      heap[0] = heap[heapSize * 2]
+      heap[1] = heap[heapSize * 2 + 1]
+      let i = 0
+      while (true) {
+        const left = 2 * i + 1
+        const right = 2 * i + 2
+        let smallest = i
+        if (left < heapSize && heap[left * 2] < heap[smallest * 2]) smallest = left
+        if (right < heapSize && heap[right * 2] < heap[smallest * 2]) smallest = right
+        if (smallest === i) break
+        const te = heap[smallest * 2], ti = heap[smallest * 2 + 1]
+        heap[smallest * 2] = heap[i * 2]
+        heap[smallest * 2 + 1] = heap[i * 2 + 1]
+        heap[i * 2] = te
+        heap[i * 2 + 1] = ti
+        i = smallest
+      }
+    }
+    return cellIdx
+  }
+
+  // Seed: push all edge cells into the heap
+  for (let x = 0; x < width; x++) {
+    const top = idx(x, 0)
+    const bot = idx(x, height - 1)
+    if (!isNaN(filled[top])) { heapPush(filled[top], top); closed[top] = 1 }
+    if (!isNaN(filled[bot])) { heapPush(filled[bot], bot); closed[bot] = 1 }
+  }
+  for (let y = 1; y < height - 1; y++) {
+    const left = idx(0, y)
+    const right = idx(width - 1, y)
+    if (!isNaN(filled[left])) { heapPush(filled[left], left); closed[left] = 1 }
+    if (!isNaN(filled[right])) { heapPush(filled[right], right); closed[right] = 1 }
+  }
+
+  while (heapSize > 0) {
+    const i = heapPop()
+    const cx = i % width
+    const cy = (i / width) | 0
+    const elev = filled[i]
+
+    for (let d = 0; d < 8; d++) {
+      const nx = cx + DX[d]
+      const ny = cy + DY[d]
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue
+      const ni = nx + ny * width
+      if (closed[ni]) continue
+      if (isNaN(filled[ni])) continue
+
+      // Fill to at least the current cell's elevation (spill point)
+      if (filled[ni] < elev) filled[ni] = elev
+
+      closed[ni] = 1
+      heapPush(filled[ni], ni)
+    }
+  }
 }
 
 /**
@@ -532,9 +598,9 @@ function cross(o: LngLat, a: LngLat, b: LngLat): number {
 function findWatershedDivides(
   dirs: Int8Array,
   acc: Float64Array,
-  filled: (number | null)[][],
-  height: number,
+  filled: Float32Array,
   width: number,
+  height: number,
   bounds: [LngLat, LngLat],
   cellSizeM: number,
 ): WatershedDivide[] {
