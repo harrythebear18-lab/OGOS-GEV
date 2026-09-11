@@ -9,6 +9,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import { pluginManager } from './plugin-manager'
 import type { ImportResult, ImportedFeature } from '@shared/types'
 
 export class ExportImportPlugin implements EarthEnginePlugin {
@@ -77,17 +78,93 @@ export class ExportImportPlugin implements EarthEnginePlugin {
 
   /**
    * Collect analysis results from all active plugins via the plugin manager.
-   * The plugin manager exposes getActive() which returns active plugin instances.
-   * Each analysis plugin exposes getter methods (getZones, getPaths, etc.) that
-   * we use to build the export payload.
+   * Each analysis plugin exposes getter methods (getZones, getPaths, etc.)
+   * that we use to build the export payload matching export-service.ts keys.
    */
   private collectResults(): Record<string, unknown> {
     const results: Record<string, unknown> = {}
-    // The export-service accepts a results dict with keys like 'zones', 'restPoints',
-    // 'runoff', 'route', 'fallRisk', 'corridor', 'slope', 'anomaly'.
-    // For now, we pass an empty object — the renderer doesn't have direct access
-    // to all plugin results. A future enhancement could wire the plugin manager
-    // to expose a unified results collector.
+    const active = pluginManager.getActive()
+    const getPlugin = (id: string) => {
+      const all = pluginManager.getPlugins()
+      return all.find((p) => p.id === id)
+    }
+
+    for (const id of active) {
+      const plugin = getPlugin(id) as any
+      if (!plugin) continue
+
+      try {
+        // Search zones
+        if (id === 'search-zones' && typeof plugin.getZones === 'function') {
+          const zones = plugin.getZones()
+          if (zones?.length > 0) {
+            results['zones'] = { zones: zones.map((z: any) => ({
+              lat: z.lat, lng: z.lng, radius: z.radiusKm ?? z.radius,
+              probability: z.probability ?? 0,
+              polygon: z.polygon ?? [{ lat: z.lat, lng: z.lng }],
+            })) }
+          }
+        }
+
+        // Rest points
+        if (id === 'rest-points' && typeof plugin.getPoints === 'function') {
+          const points = plugin.getPoints()
+          if (points?.length > 0) results['restPoints'] = { points }
+        }
+
+        // Fall risk
+        if (id === 'fall-risk' && typeof plugin.getZones === 'function') {
+          const zones = plugin.getZones()
+          if (zones?.length > 0) results['fallRisk'] = { zones }
+        }
+
+        // Remains corridor
+        if (id === 'remains-corridor' && typeof plugin.getPaths === 'function') {
+          const paths = plugin.getPaths()
+          if (paths?.length > 0) results['corridor'] = { paths }
+        }
+
+        // Anomaly
+        if (id === 'anomaly' && typeof plugin.getZones === 'function') {
+          const zones = plugin.getZones()
+          if (zones?.length > 0) results['anomaly'] = { zones }
+        }
+
+        // Roads
+        if (id === 'roads' && typeof plugin.getSegments === 'function') {
+          const segments = plugin.getSegments()
+          if (segments?.length > 0) results['roads'] = { segments }
+        }
+
+        // Water
+        if (id === 'water' && typeof plugin.getFeatures === 'function') {
+          const features = plugin.getFeatures()
+          if (features?.length > 0) results['water'] = { features }
+        }
+
+        // Infrastructure
+        if (id === 'infrastructure' && typeof plugin.getFeatures === 'function') {
+          const features = plugin.getFeatures()
+          if (features?.length > 0) results['infrastructure'] = { features }
+        }
+
+        // CLIP results
+        if (id === 'clip' && typeof plugin.getResults === 'function') {
+          const clipResults = plugin.getResults()
+          if (clipResults?.length > 0) results['clip'] = { results: clipResults }
+        }
+
+        // Web search results
+        if (id === 'web-search' && typeof plugin.getResults === 'function') {
+          const searchResults = plugin.getResults()
+          if (searchResults?.length > 0) results['webSearch'] = { results: searchResults }
+        }
+      } catch (err) {
+        console.warn(`[export] failed to collect from plugin ${id}:`, err)
+      }
+    }
+
+    console.log(`[export] collected results from ${Object.keys(results).length} sources:`, Object.keys(results).join(', '))
     return results
   }
 

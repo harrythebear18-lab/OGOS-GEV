@@ -755,19 +755,177 @@ export interface SpaceWeather {
   timestamp: number
 }
 
-/* ── Climate integrity ── */
+/* ── Climate integrity (ported from OGOS climateTypes.ts) ── */
+
+export type IntegrityStatus = 'verified' | 'warning' | 'failed' | 'stale' | 'unknown'
+
+export interface ClimateAlert {
+  id: string
+  timestamp: number
+  type: string
+  stationId: string
+  stationName: string
+  source: ClimateDataSource
+  lat: number
+  lon: number
+  message: string
+  severity: 'info' | 'warning' | 'critical'
+  field?: string
+}
+
+export interface PipelineCheck {
+  check: string
+  status: IntegrityStatus
+  message: string
+}
+
+export interface DataFlowHealth {
+  source: ClimateDataSource
+  sourceName: string
+  status: IntegrityStatus
+  pipelineScore: number
+  lastFetchTime: number
+  fetchLatencyMs: number
+  avgLatencyMs: number
+  payloadSizeBytes: number
+  stationsExpected: number
+  stationsReceived: number
+  completenessPercent: number
+  duplicateCount: number
+  outOfOrderCount: number
+  missingFieldCount: number
+  totalPackets: number
+  droppedPackets: number
+  pipelineChecks: PipelineCheck[]
+  latencyHistory: number[]
+}
+
+export interface SensorCheck {
+  check: string
+  status: IntegrityStatus
+  message: string
+  value?: string
+}
+
+export interface SensorHealth {
+  stationId: string
+  status: IntegrityStatus
+  integrityScore: number
+  lastTransmission: number
+  expectedIntervalMs: number
+  actualIntervalMs: number
+  transmissionCount: number
+  missedTransmissions: number
+  transmissionRegularity: number
+  fieldsExpected: string[]
+  fieldsReceived: string[]
+  fieldsMissing: string[]
+  driftDetected: boolean
+  driftDetails: string[]
+  calibrationStatus: string
+  consecutiveFailures: number
+  uptimePercent: number
+  checks: SensorCheck[]
+}
+
+export interface VerificationFlag {
+  type: string
+  severity: 'warning' | 'critical'
+  message: string
+  field?: string
+}
+
+export interface NearbyComparison {
+  stationId: string
+  stationName: string
+  source: ClimateDataSource
+  distanceKm: number
+  field: string
+  theirValue: number
+  ourValue: number
+  delta: number
+  withinTolerance: boolean
+}
+
+export interface PhysicalCheck {
+  field: string
+  value: number
+  min: number
+  max: number
+  passed: boolean
+  message: string
+}
+
+export interface StatisticalCheck {
+  status: IntegrityStatus
+  zScore: number
+  mean: number
+  stdDev: number
+  sampleSize: number
+  message: string
+}
+
+export interface TemporalCheck {
+  status: IntegrityStatus
+  previousValue?: number
+  currentValue: number
+  rateOfChange: number
+  maxExpectedRate: number
+  message: string
+}
+
+export interface CrossSourceCheck {
+  field: string
+  sources: string[]
+  values: number[]
+  spread: number
+  agreement: boolean
+  message: string
+}
+
+export interface CrossVerification {
+  stationId: string
+  stationName: string
+  source: ClimateDataSource
+  lat: number
+  lon: number
+  status: IntegrityStatus
+  verificationScore: number
+  measurement?: ClimateMeasurement
+  nearbyComparisons: NearbyComparison[]
+  physicalPlausibility: PhysicalCheck[]
+  statisticalOutlier: StatisticalCheck
+  temporalConsistency: TemporalCheck
+  crossSourceAgreement: CrossSourceCheck[]
+  flags: VerificationFlag[]
+}
+
+export interface IntegritySummary {
+  overallScore: number
+  sensorLayerScore: number
+  dataFlowLayerScore: number
+  resultsLayerScore: number
+  totalSensorsMonitored: number
+  sensorsVerified: number
+  sensorsWarning: number
+  sensorsFailed: number
+  pipelinesActive: number
+  pipelinesDegraded: number
+  resultsValidated: number
+  resultsFlagged: number
+  totalFlags: number
+  criticalFlags: number
+  warningFlags: number
+  dataPointsVerified: number
+  crossSourceMatches: number
+  crossSourceMismatches: number
+}
 
 export interface IntegrityUpdate {
-  sensorHealth: unknown[]
-  dataFlowHealth: unknown[]
-  crossVerifications: unknown[]
-  summary: {
-    totalChecks: number
-    passed: number
-    warnings: number
-    failed: number
-    avgIntegrityScore: number
-  }
+  sensorHealth: [string, SensorHealth][]
+  dataFlowHealth: DataFlowHealth[]
+  crossVerifications: CrossVerification[]
+  summary: IntegritySummary
   storms: Storm[]
   lightningStrikes: unknown[]
   vessels: unknown[]

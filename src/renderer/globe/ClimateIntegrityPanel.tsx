@@ -38,7 +38,7 @@ export default function ClimateIntegrityPanel() {
   }
 
   const s = integrity.summary
-  const score = Math.round(s.avgIntegrityScore * 100)
+  const score = Math.round(s.overallScore)
   const scoreColor = score > 75 ? '#4aff8a' : score > 50 ? '#ffea4a' : score > 25 ? '#ff8a4a' : '#ff4a4a'
   const scoreLabel = score > 75 ? 'NOMINAL' : score > 50 ? 'DEGRADED' : score > 25 ? 'POOR' : 'CRITICAL'
 
@@ -85,15 +85,15 @@ export default function ClimateIntegrityPanel() {
       {/* Check summary */}
       <div style={panelStyle.checkRow}>
         <div style={panelStyle.checkItem}>
-          <span style={{ ...panelStyle.checkVal, color: '#4aff8a' }}>{s.passed}</span>
-          <span style={panelStyle.checkLabel}>PASSED</span>
+          <span style={{ ...panelStyle.checkVal, color: '#4aff8a' }}>{s.sensorsVerified}</span>
+          <span style={panelStyle.checkLabel}>VERIFIED</span>
         </div>
         <div style={panelStyle.checkItem}>
-          <span style={{ ...panelStyle.checkVal, color: '#ffea4a' }}>{s.warnings}</span>
+          <span style={{ ...panelStyle.checkVal, color: '#ffea4a' }}>{s.sensorsWarning}</span>
           <span style={panelStyle.checkLabel}>WARN</span>
         </div>
         <div style={panelStyle.checkItem}>
-          <span style={{ ...panelStyle.checkVal, color: '#ff4a4a' }}>{s.failed}</span>
+          <span style={{ ...panelStyle.checkVal, color: '#ff4a4a' }}>{s.sensorsFailed}</span>
           <span style={panelStyle.checkLabel}>FAILED</span>
         </div>
       </div>
@@ -132,6 +132,40 @@ export default function ClimateIntegrityPanel() {
             <span style={panelStyle.feedLabel}>{f.label}</span>
           </div>
         ))}
+      </div>
+
+      {/* Pipeline health */}
+      <div style={panelStyle.sectionHeader}>DATA PIPELINES</div>
+      <div style={panelStyle.checkRow}>
+        <div style={panelStyle.checkItem}>
+          <span style={{ ...panelStyle.checkVal, color: '#4aff8a' }}>{s.pipelinesActive}</span>
+          <span style={panelStyle.checkLabel}>ACTIVE</span>
+        </div>
+        <div style={panelStyle.checkItem}>
+          <span style={{ ...panelStyle.checkVal, color: '#ff8a4a' }}>{s.pipelinesDegraded}</span>
+          <span style={panelStyle.checkLabel}>DEGRADED</span>
+        </div>
+        <div style={panelStyle.checkItem}>
+          <span style={{ ...panelStyle.checkVal, color: '#4a9eff' }}>{s.resultsValidated}</span>
+          <span style={panelStyle.checkLabel}>VALIDATED</span>
+        </div>
+      </div>
+
+      {/* Verification flags */}
+      <div style={panelStyle.sectionHeader}>VERIFICATION FLAGS</div>
+      <div style={panelStyle.checkRow}>
+        <div style={panelStyle.checkItem}>
+          <span style={{ ...panelStyle.checkVal, color: '#ff4a4a' }}>{s.criticalFlags}</span>
+          <span style={panelStyle.checkLabel}>CRITICAL</span>
+        </div>
+        <div style={panelStyle.checkItem}>
+          <span style={{ ...panelStyle.checkVal, color: '#ffea4a' }}>{s.warningFlags}</span>
+          <span style={panelStyle.checkLabel}>WARN</span>
+        </div>
+        <div style={panelStyle.checkItem}>
+          <span style={{ ...panelStyle.checkVal, color: '#4aff8a' }}>{s.crossSourceMatches}</span>
+          <span style={panelStyle.checkLabel}>MATCHED</span>
+        </div>
       </div>
     </div>
   )

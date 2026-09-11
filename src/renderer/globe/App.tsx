@@ -14,6 +14,9 @@ import ElevationProfile from './ElevationProfile'
 import ClimateIntegrityPanel from './ClimateIntegrityPanel'
 import WeatherOverlay from './WeatherOverlay'
 import PredictionPanel from './PredictionPanel'
+import IncidentPanel from './IncidentPanel'
+import NetworkGridPanel from './NetworkGridPanel'
+import ExplainabilityOverlay, { type Hypothesis } from './ExplainabilityOverlay'
 import AiPanel from './AiPanel'
 import { pluginManager } from './plugins'
 import type { PluginContext } from './plugins'
@@ -55,7 +58,10 @@ export default function App() {
   const [showIntegrity, setShowIntegrity] = useState<boolean>(false)
   const [showWeather, setShowWeather] = useState<boolean>(false)
   const [showPredictions, setShowPredictions] = useState<boolean>(false)
+  const [showIncident, setShowIncident] = useState<boolean>(false)
+  const [showNetGrid, setShowNetGrid] = useState<boolean>(false)
   const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
+  const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
 
   // ── Entity Info Box ──
   const [pickedEntity, setPickedEntity] = useState<PickedEntity | null>(null)
@@ -234,7 +240,7 @@ export default function App() {
         />
       }
       aiPanel={
-        <AiPanel viewer={viewer} />
+        <AiPanel viewer={viewer} onHypothesesChange={setHypotheses} />
       }
       statusBar={
         <MemoStatusBar
@@ -298,9 +304,11 @@ export default function App() {
         position: 'absolute', top: 60, right: 12, zIndex: 200,
         display: 'flex', gap: 4,
       }}>
-        <ToolbarBtn label="INTEGRITY" color="#4a9eff" active={showIntegrity} onClick={() => { setShowIntegrity(!showIntegrity); setShowWeather(false); setShowPredictions(false) }} />
-        <ToolbarBtn label="WEATHER" color="#4affd4" active={showWeather} onClick={() => { setShowWeather(!showWeather); setShowIntegrity(false); setShowPredictions(false) }} />
-        <ToolbarBtn label="PREDICT" color="#a04aff" active={showPredictions} onClick={() => { setShowPredictions(!showPredictions); setShowIntegrity(false); setShowWeather(false) }} />
+        <ToolbarBtn label="INTEGRITY" color="#4a9eff" active={showIntegrity} onClick={() => { setShowIntegrity(!showIntegrity); setShowWeather(false); setShowPredictions(false); setShowIncident(false); setShowNetGrid(false) }} />
+        <ToolbarBtn label="WEATHER" color="#4affd4" active={showWeather} onClick={() => { setShowWeather(!showWeather); setShowIntegrity(false); setShowPredictions(false); setShowIncident(false); setShowNetGrid(false) }} />
+        <ToolbarBtn label="PREDICT" color="#a04aff" active={showPredictions} onClick={() => { setShowPredictions(!showPredictions); setShowIntegrity(false); setShowWeather(false); setShowIncident(false); setShowNetGrid(false) }} />
+        <ToolbarBtn label="INCIDENT" color="#ff8a4a" active={showIncident} onClick={() => { setShowIncident(!showIncident); setShowIntegrity(false); setShowWeather(false); setShowPredictions(false); setShowNetGrid(false) }} />
+        <ToolbarBtn label="NET/GRID" color="#4affff" active={showNetGrid} onClick={() => { setShowNetGrid(!showNetGrid); setShowIntegrity(false); setShowWeather(false); setShowPredictions(false); setShowIncident(false) }} />
       </div>
 
       {/* Climate integrity panel — toggleable floating panel */}
@@ -319,6 +327,63 @@ export default function App() {
       {showPredictions && (
         <PredictionPanel onClose={() => setShowPredictions(false)} />
       )}
+
+      {/* Incident panel — Fall → Flow → Find pipeline */}
+      {showIncident && (
+        <div style={{ position: 'absolute', top: 88, right: 12, zIndex: 200, width: 280 }}>
+          <IncidentPanel
+            selection={selection}
+            lkp={lkpPin}
+            viewportCenter={
+              hudViewport && typeof hudViewport === 'object' && 'center' in (hudViewport as any)
+                ? (hudViewport as any).center
+                : null
+            }
+            tripParams={{
+              hoursSinceLastSeen: 24,
+              day: 1,
+              pace: 'normal' as any,
+              packWeight: 'medium' as any,
+              experience: 'intermediate' as any,
+              weather: 'clear' as any,
+              temperatureC: 20,
+              timeOfDay: 'day' as any,
+              ageGroup: 'adult' as any,
+              fitness: 'average' as any,
+            }}
+            onFlyTo={(lng, lat) => {
+              if (viewer) {
+                viewer.camera.flyTo({
+                  destination: Cesium.Cartesian3.fromDegrees(lng, lat, 5000),
+                  duration: 1.5,
+                })
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Network/Grid operational panel */}
+      {showNetGrid && (
+        <div style={{ position: 'absolute', top: 88, right: 12, zIndex: 200 }}>
+          <NetworkGridPanel />
+        </div>
+      )}
+
+      {/* Explainability overlay — AI hypothesis zones on the globe */}
+      <ExplainabilityOverlay
+        viewer={viewer}
+        hypotheses={hypotheses}
+        onZoneClick={(zone) => {
+          if (viewer && zone.coords.length > 0) {
+            const c = zone.coords[0]
+            viewer.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(c.lng, c.lat, 50000),
+              duration: 1.0,
+            })
+          }
+        }}
+      />
     </CockpitShell>
   )
 }

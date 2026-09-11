@@ -162,8 +162,23 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, alert: unknown) => cb(alert)
       ipcRenderer.on(IPC.GRID_ALERT, handler)
     },
+    onIntegrity: (cb: (integrity: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, integrity: unknown) => cb(integrity)
+      ipcRenderer.on(IPC.GRID_INTEGRITY, handler)
+    },
+    onTraffic: (cb: (traffic: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, traffic: unknown) => cb(traffic)
+      ipcRenderer.on(IPC.GRID_TRAFFIC, handler)
+    },
     whitelist: (assetId: string) => ipcRenderer.invoke(IPC.GRID_WHITELIST, assetId),
     unwhitelist: (assetId: string) => ipcRenderer.invoke(IPC.GRID_UNWHITELIST, assetId),
+    getWhitelist: () => ipcRenderer.invoke(IPC.GRID_GET_WHITELIST),
+    snooze: (minutes: number) => ipcRenderer.invoke(IPC.GRID_SNOOZE, minutes),
+    isSnoozed: () => ipcRenderer.invoke(IPC.GRID_GET_SNOOZE),
+    getSettings: () => ipcRenderer.invoke(IPC.GRID_GET_SETTINGS),
+    updateSettings: (partial: unknown) => ipcRenderer.invoke(IPC.GRID_UPDATE_SETTINGS, partial),
+    setCrossDomain: (enabled: boolean) => ipcRenderer.invoke(IPC.GRID_SET_CROSS_DOMAIN, enabled),
+    getCrossDomain: () => ipcRenderer.invoke(IPC.GRID_GET_CROSS_DOMAIN),
   },
 
   /* ── Network (pushed + invoke) ── */
@@ -180,6 +195,10 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, health: unknown) => cb(health)
       ipcRenderer.on(IPC.NET_HEALTH, handler)
     },
+    onOutage: (cb: (outage: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, outage: unknown) => cb(outage)
+      ipcRenderer.on(IPC.NET_OUTAGE, handler)
+    },
     onVpn: (cb: (status: unknown) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, status: unknown) => cb(status)
       ipcRenderer.on(IPC.NET_VPN, handler)
@@ -189,6 +208,7 @@ const api = {
       ipcRenderer.on(IPC.NET_USER_LOCATION, handler)
     },
     refreshVpn: () => ipcRenderer.invoke(IPC.NET_VPN_REFRESH),
+    geoipLookup: (ip: string) => ipcRenderer.invoke(IPC.NET_GEOIP_LOOKUP, ip),
     speedTest: () => ipcRenderer.invoke(IPC.NET_SPEEDTEST_RUN),
     dnsTest: () => ipcRenderer.invoke(IPC.NET_DNSTEST_RUN),
   },

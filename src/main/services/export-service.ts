@@ -176,6 +176,72 @@ export function toGeoJSON(results: Record<string, unknown>): string {
     }
   }
 
+  // Roads
+  const roads = results.roads as { segments: any[] } | undefined
+  if (roads) {
+    for (const s of roads.segments) {
+      if (s.coords && s.coords.length >= 2) {
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: s.coords.map((c: any) => [c.lng, c.lat]) },
+          properties: { type: 'road', name: s.name ?? '', highway: s.highway ?? '' },
+        })
+      }
+    }
+  }
+
+  // Water features
+  const water = results.water as { features: any[] } | undefined
+  if (water) {
+    for (const f of water.features) {
+      if (f.coords && f.coords.length >= 2) {
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: f.coords.map((c: any) => [c.lng, c.lat]) },
+          properties: { type: 'water', name: f.name ?? '', waterType: f.type ?? '' },
+        })
+      }
+    }
+  }
+
+  // Infrastructure
+  const infra = results.infrastructure as { features: any[] } | undefined
+  if (infra) {
+    for (const f of infra.features) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [f.lng ?? f.lon ?? 0, f.lat ?? 0] },
+        properties: { type: 'infrastructure', name: f.name ?? '', infraType: f.type ?? '' },
+      })
+    }
+  }
+
+  // CLIP similarity results
+  const clip = results.clip as { results: any[] } | undefined
+  if (clip) {
+    for (const r of clip.results) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [r.lng ?? r.lon ?? 0, r.lat ?? 0] },
+        properties: { type: 'clip-match', score: r.score ?? r.similarity ?? 0, label: r.label ?? '' },
+      })
+    }
+  }
+
+  // Web search results
+  const webSearch = results.webSearch as { results: any[] } | undefined
+  if (webSearch) {
+    for (const r of webSearch.results) {
+      if (r.lat && r.lng) {
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+          properties: { type: 'web-result', title: r.title ?? '', url: r.url ?? '', snippet: r.snippet ?? '' },
+        })
+      }
+    }
+  }
+
   const fc: GeoJSONFeatureCollection = { type: 'FeatureCollection', features }
   return JSON.stringify(fc, null, 2)
 }

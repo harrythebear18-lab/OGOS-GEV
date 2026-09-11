@@ -447,6 +447,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.CLIMATE_UNWHITELIST, (_event, stationId: string) => {
     climateMonitor.unwhitelistStation?.(stationId)
   })
+  ipcMain.handle(IPC.CLIMATE_SNOOZE, (_event, ms: number) => {
+    climateMonitor.setSnooze?.(ms)
+  })
+  ipcMain.handle(IPC.CLIMATE_GET_SNOOZE, () => {
+    return climateMonitor.isSnoozed?.() ?? false
+  })
 
   /* ── Grid ── */
   ipcMain.handle(IPC.GRID_WHITELIST, (_event, assetId: string) => {
@@ -457,6 +463,18 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(IPC.GRID_GET_WHITELIST, () => {
     return gridMonitor.getWhitelist()
+  })
+  ipcMain.handle(IPC.GRID_SNOOZE, (_event, minutes: number) => {
+    gridMonitor.snoozeAlerts?.(minutes)
+  })
+  ipcMain.handle(IPC.GRID_GET_SNOOZE, () => {
+    return gridMonitor.isSnoozed?.() ?? false
+  })
+  ipcMain.handle(IPC.GRID_GET_SETTINGS, () => {
+    return gridMonitor.getSettings?.()
+  })
+  ipcMain.handle(IPC.GRID_UPDATE_SETTINGS, (_event, partial: unknown) => {
+    gridMonitor.updateSettings?.(partial as any)
   })
   ipcMain.handle(IPC.GRID_SET_CROSS_DOMAIN, (_event, enabled: boolean) => {
     gridMonitor.setCrossDomainEnabled(enabled)

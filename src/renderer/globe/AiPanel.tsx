@@ -12,20 +12,30 @@ interface ChatMsg {
   error?: boolean
 }
 
+interface HypothesisZone {
+  id: string
+  label: string
+  confidence: number // 0-100
+  coords: { lng: number; lat: number }[]
+  reasons: string[]
+}
+
 interface Hypothesis {
   id: string
   title: string
   confidence: 'low' | 'moderate' | 'high' | 'critical'
   rationale: string
   suggestedZone?: string
+  suggestedZones?: HypothesisZone[]
   createdAt: number
 }
 
 interface AiPanelProps {
   viewer: Cesium.Viewer | null
+  onHypothesesChange?: (hypotheses: Hypothesis[]) => void
 }
 
-export default function AiPanel({ viewer }: AiPanelProps) {
+export default function AiPanel({ viewer, onHypothesesChange }: AiPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,6 +46,11 @@ export default function AiPanel({ viewer }: AiPanelProps) {
   const [activeTools, setActiveTools] = useState<{ name: string; args: unknown }[]>([])
   const [activeTab, setActiveTab] = useState<'chat' | 'hypotheses'>('chat')
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
+
+  // Notify parent when hypotheses change (for explainability overlay)
+  useEffect(() => {
+    onHypothesesChange?.(hypotheses)
+  }, [hypotheses, onHypothesesChange])
   const [genHypotheses, setGenHypotheses] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const streamUnsubRef = useRef<(() => void) | null>(null)
@@ -200,7 +215,13 @@ export default function AiPanel({ viewer }: AiPanelProps) {
 
     try {
       // Ask the AI to generate structured hypotheses about the current scene
-      const prompt = 'Generate 3-5 search hypotheses about the current viewport. For each, provide a title, confidence level (low/moderate/high/critical), rationale, and suggested search zone. Format as JSON array.'
+      const prompt = `Generate 3-5 search hypotheses about the current viewport. For each, provide:
+- title: short title
+- confidence: low|moderate|high|critical
+- rationale: why this hypothesis
+- suggestedZones: array of { label, confidence (0-100), coords: [{lng,lat},...], reasons: [string] }
+
+Format as JSON array. Use approximate viewport coordinates for zone polygons.`
       const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined }) as { response?: string; error?: string }
 
       if (result?.error) {
@@ -216,6 +237,12 @@ export default function AiPanel({ viewer }: AiPanelProps) {
               confidence?: string
               rationale?: string
               suggestedZone?: string
+              suggestedZones?: Array<{
+                label: string
+                confidence: number
+                coords: { lng: number; lat: number }[]
+                reasons: string[]
+              }>
             }>
             const newHyps: Hypothesis[] = parsed
               .filter((h) => h.title)
@@ -226,6 +253,13 @@ export default function AiPanel({ viewer }: AiPanelProps) {
                   ? h.confidence! : 'moderate') as Hypothesis['confidence'],
                 rationale: h.rationale ?? '',
                 suggestedZone: h.suggestedZone,
+                suggestedZones: (h.suggestedZones ?? []).map((z, j) => ({
+                  id: `zone-${Date.now()}-${i}-${j}`,
+                  label: z.label ?? `Zone ${j + 1}`,
+                  confidence: typeof z.confidence === 'number' ? z.confidence : 50,
+                  coords: Array.isArray(z.coords) ? z.coords : [],
+                  reasons: Array.isArray(z.reasons) ? z.reasons : [],
+                })),
                 createdAt: Date.now(),
               }))
             if (newHyps.length > 0) {

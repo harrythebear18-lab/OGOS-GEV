@@ -108,6 +108,35 @@ declare global {
         getCurrent: () => Promise<any>
       }
 
+      grid: {
+        onUpdate: (cb: (update: unknown) => void) => () => void
+        onAlert: (cb: (alert: unknown) => void) => () => void
+        onIntegrity: (cb: (integrity: unknown) => void) => () => void
+        onTraffic: (cb: (traffic: unknown) => void) => () => void
+        whitelist: (assetId: string) => Promise<void>
+        unwhitelist: (assetId: string) => Promise<void>
+        getWhitelist: () => Promise<string[]>
+        snooze: (minutes: number) => Promise<void>
+        isSnoozed: () => Promise<boolean>
+        getSettings: () => Promise<unknown>
+        updateSettings: (partial: unknown) => Promise<void>
+        setCrossDomain: (enabled: boolean) => Promise<void>
+        getCrossDomain: () => Promise<boolean>
+      }
+
+      network: {
+        onUpdate: (cb: (update: unknown) => void) => () => void
+        onAlert: (cb: (alert: unknown) => void) => () => void
+        onHealth: (cb: (health: unknown) => void) => () => void
+        onOutage: (cb: (outage: unknown) => void) => () => void
+        onVpn: (cb: (status: unknown) => void) => () => void
+        onUserLocation: (cb: (loc: unknown) => void) => () => void
+        refreshVpn: () => Promise<void>
+        geoipLookup: (ip: string) => Promise<unknown>
+        speedTest: () => Promise<unknown>
+        dnsTest: () => Promise<unknown>
+      }
+
       climateHelpers: {
         depth: (lat: number, lon: number) => Promise<{ depthM: number } | null>
         classify: (lat: number, lon: number, stationType?: string) => Promise<unknown>

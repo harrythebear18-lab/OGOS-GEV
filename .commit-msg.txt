@@ -1,20 +1,25 @@
-Fix climate stations + predictions not loading on plugin activation
+Port OGOS integrity pipeline, incident workflow, explainability overlay, and network/grid UI
 
-Root cause: plugins subscribed to future IPC broadcasts only. If the backend
-already broadcast before the plugin activated, it would wait up to 4 minutes
-for the next cycle before showing any data.
-
-Fix:
-- Add CLIMATE_GET_CURRENT + PREDICTION_GET_CURRENT IPC channels
-- Add IPC handlers that return the last known climate state + last prediction
-- Store last PredictionUpdate in PredictionEngine + add getLastUpdate() getter
-- Add getCurrent() to preload climate + predictions namespaces
-- Update climate-stations plugin to request current state on register
-- Update PredictionPanel to request current state on mount
-
-Now when the climate-stations plugin is activated, it immediately requests
-the last known state (4000+ Argo floats, buoys, etc.) instead of waiting
-for the next 4-minute polling cycle.
+- Port four climate integrity services from OGOS: DataFlowMonitor,
+  SensorVerifier, ResultsVerifier, HeuristicWatchdog. Wire them into
+  ClimateMonitor so IntegrityUpdate now carries real sensor health,
+  pipeline scores, and cross-verification arrays instead of empties.
+- Extend IntegritySummary with sensor/pipeline/results layer scores
+  and flag tallies; update ClimateIntegrityPanel to render them.
+- Add IncidentPanel for the Fall -> Flow -> Find missing-person
+  workflow (route plan, fall-risk map, remains corridor) with
+  bounds validation and fly-to controls.
+- Add ExplainabilityOverlay rendering AI hypothesis zones as
+  confidence-colored polygons on the Cesium globe with a click-to-
+  inspect reasoning popup. Extend AiPanel hypothesis schema to
+  carry zone polygons.
+- Add NetworkGridPanel exposing network (speed test, DNS test, VPN,
+  GeoIP, alerts) and grid (assets, cross-domain toggle, snooze,
+  alerts) operational controls.
+- Extend preload + globals.d.ts with grid and network API surfaces;
+  add IPC handlers for grid snooze/settings and climate snooze.
+- Wire export collectResults() to gather real plugin results so
+  GeoJSON/KML exports are no longer empty.
 
 Generated with [Devin](https://devin.ai)
 

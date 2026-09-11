@@ -23,9 +23,15 @@ import type {
   ClimateStats,
   ClimateUpdate,
   IntegrityUpdate,
+  IntegritySummary,
   Storm,
   SpaceWeather,
   LiveFeature,
+  ClimateDataSource,
+  ClimateAlert,
+  DataFlowHealth,
+  SensorHealth,
+  CrossVerification,
 } from '@shared/types'
 import { broadcastToWindows } from '../../windows'
 import { ErddapFetcher, type FetchResult } from './erddap-fetcher'
@@ -37,12 +43,14 @@ import { getAircraftFeatures } from '../live/aircraft'
 import { getVesselFeatures } from '../live/vessels'
 import { getFireFeatures } from '../live/fires'
 import { ensureBathymetryGrid } from './bathymetry-cache'
+import { DataFlowMonitor } from './data-flow-monitor'
+import { SensorVerifier } from './sensor-verifier'
+import { ResultsVerifier } from './results-verifier'
+import { HeuristicWatchdog } from './heuristic-watchdog'
 
 import type { PredictionEngine } from '../prediction/prediction-engine'
 
 const POLL_INTERVAL_MS = 4 * 60 * 1000 // 4 minutes
-const STALE_DATA_MS = 2 * 60 * 60 * 1000 // 2 hours
-
 const USGS_QUAKES_URL =
   'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson'
 
@@ -67,6 +75,39 @@ class ClimateMonitor {
   private lastEarthquakes: unknown[] = []
   private predictionEngine: PredictionEngine | null = null
   private whitelistedStations = new Set<string>()
+  private snoozeUntil = 0
+
+  // Integrity pipeline (ported from OGOS)
+  private dataFlowMonitor: DataFlowMonitor
+  private sensorVerifier: SensorVerifier
+  private resultsVerifier: ResultsVerifier
+  private heuristicWatchdog: HeuristicWatchdog
+  private lastIntegritySummary: IntegritySummary | null = null
+
+  constructor() {
+    this.dataFlowMonitor = new DataFlowMonitor((alert) => this.emitAlert(alert))
+    this.sensorVerifier = new SensorVerifier((alert) => this.emitAlert(alert))
+    this.resultsVerifier = new ResultsVerifier((alert) => this.emitAlert(alert))
+    this.heuristicWatchdog = new HeuristicWatchdog((alert) => this.emitAlert(alert))
+  }
+
+  private emitAlert(alert: ClimateAlert): void {
+    if (this.isSnoozed()) return
+    if (this.whitelistedStations.has(alert.stationId)) return
+    broadcastToWindows(IPC.CLIMATE_ALERT, alert)
+  }
+
+  setSnooze(ms: number): void {
+    this.snoozeUntil = ms > 0 ? Date.now() + ms : 0
+  }
+
+  isSnoozed(): boolean {
+    return Date.now() < this.snoozeUntil
+  }
+
+  getIntegritySummary(): IntegritySummary | null {
+    return this.lastIntegritySummary
+  }
 
   start(): void {
     console.log('[climate/monitor] start() — polling every 4 minutes')
@@ -156,27 +197,68 @@ class ClimateMonitor {
     this.fetchInProgress = true
 
     try {
-      // ── Fetch all ERDDAP + METAR sources in parallel ──
-      const sourceFetches: Promise<FetchResult>[] = [
-        ErddapFetcher.fetchNDBC(),
-        ErddapFetcher.fetchTAO(),
-        ErddapFetcher.fetchTAOCurrents(),
-        ErddapFetcher.fetchTAOSalinity(),
-        ErddapFetcher.fetchGTSPP(),
-        ErddapFetcher.fetchArgo(),
-        ErddapFetcher.fetchCO2(),
-        WeatherFetcher.fetchNWS(),
+      // ── Fetch all ERDDAP + METAR sources in parallel, tracking per-source health ──
+      const sourceConfigs: { source: ClimateDataSource; fetchFn: () => Promise<FetchResult> }[] = [
+        { source: 'NOAA_NDBC', fetchFn: () => ErddapFetcher.fetchNDBC() },
+        { source: 'TAO_PIRATA', fetchFn: () => ErddapFetcher.fetchTAO() },
+        { source: 'TAO_PIRATA', fetchFn: () => ErddapFetcher.fetchTAOCurrents() },
+        { source: 'TAO_PIRATA', fetchFn: () => ErddapFetcher.fetchTAOSalinity() },
+        { source: 'GTSPP', fetchFn: () => ErddapFetcher.fetchGTSPP() },
+        { source: 'ARGO', fetchFn: () => ErddapFetcher.fetchArgo() },
+        { source: 'PMEL_CO2', fetchFn: () => ErddapFetcher.fetchCO2() },
+        { source: 'NWS_WEATHER', fetchFn: () => WeatherFetcher.fetchNWS() },
       ]
 
-      const results = await Promise.allSettled(sourceFetches)
+      const dataFlowResults: DataFlowHealth[] = []
+      const fetchResults = await Promise.all(
+        sourceConfigs.map(async (cfg) => {
+          const startTime = Date.now()
+          try {
+            const result = await cfg.fetchFn()
+            const latency = Date.now() - startTime
+            const payloadSize = JSON.stringify(result).length
+            const measurementsMap = new Map(
+              Object.entries(result.measurements).map(([k, v]) => [
+                k,
+                { timestamp: v.timestamp, stationId: k },
+              ]),
+            )
+            const flowHealth = this.dataFlowMonitor.recordFetch(
+              cfg.source,
+              latency,
+              payloadSize,
+              result.stations.length,
+              result.stations.length,
+              measurementsMap,
+              true,
+            )
+            dataFlowResults.push(flowHealth)
+            return result
+          } catch (e) {
+            const latency = Date.now() - startTime
+            const flowHealth = this.dataFlowMonitor.recordFetch(
+              cfg.source,
+              latency,
+              0,
+              0,
+              0,
+              new Map(),
+              false,
+            )
+            dataFlowResults.push(flowHealth)
+            console.warn(`[climate/monitor] ${cfg.source} fetch failed:`, e)
+            return null
+          }
+        }),
+      )
 
       const allStations: ClimateStation[] = []
       const allMeasurements: Record<string, ClimateMeasurement> = {}
 
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          allStations.push(...r.value.stations)
-          Object.assign(allMeasurements, r.value.measurements)
+      for (const r of fetchResults) {
+        if (r) {
+          allStations.push(...r.stations)
+          Object.assign(allMeasurements, r.measurements)
         }
       }
 
@@ -237,19 +319,6 @@ class ClimateMonitor {
       }
       broadcastToWindows(IPC.CLIMATE_UPDATE, update)
 
-      // ── Broadcast CLIMATE_TRAFFIC ──
-      broadcastToWindows(IPC.CLIMATE_TRAFFIC, {
-        timestamp: Date.now(),
-        totalStations: allStations.length,
-        activeStations: allStations.filter((s) => s.active).length,
-        newMeasurements: Object.keys(allMeasurements).length,
-        avgWaterTemp: 0, // simplified — no regional averaging in this port
-        avgCO2: 0,
-        integrityScore: 0,
-        sensorsVerified: 0,
-        sensorsFlagged: 0,
-      })
-
       // ── Broadcast STORM_UPDATE ──
       broadcastToWindows(IPC.STORM_UPDATE, storms)
 
@@ -258,19 +327,44 @@ class ClimateMonitor {
         broadcastToWindows(IPC.SPACE_WEATHER_UPDATE, spaceWeather)
       }
 
-      // ── Compute simplified integrity and broadcast CLIMATE_INTEGRITY ──
-      const integrity = this.computeIntegrity(
-        allStations,
-        allMeasurements,
+      // ── Run full integrity pipeline (sensor, results, heuristics) ──
+      const measurementsMap = new Map(Object.entries(allMeasurements))
+      const sensorHealth = this.sensorVerifier.verify(allStations, measurementsMap)
+      const crossVerifications = await this.resultsVerifier.verify(allStations, measurementsMap)
+      this.heuristicWatchdog.verify(allStations, measurementsMap, crossVerifications)
+
+      const summary = this.computeIntegritySummary(sensorHealth, dataFlowResults, crossVerifications)
+      this.lastIntegritySummary = summary
+
+      // ── Broadcast CLIMATE_INTEGRITY ──
+      const integrity: IntegrityUpdate = {
+        sensorHealth: Array.from(sensorHealth.entries()),
+        dataFlowHealth: dataFlowResults,
+        crossVerifications,
+        summary,
         storms,
+        lightningStrikes: lightningFeatures,
+        vessels: vesselFeatures,
+        aircraft: aircraftFeatures,
+        earthquakes: quakeFeatures,
         spaceWeather,
-        lightningFeatures,
-        aircraftFeatures,
-        vesselFeatures,
-        fireFeatures,
-        quakeFeatures,
-      )
+        wildfires: fireFeatures,
+        timestamp: Date.now(),
+      }
       broadcastToWindows(IPC.CLIMATE_INTEGRITY, integrity)
+
+      // ── Broadcast CLIMATE_TRAFFIC (with real integrity scores) ──
+      broadcastToWindows(IPC.CLIMATE_TRAFFIC, {
+        timestamp: Date.now(),
+        totalStations: allStations.length,
+        activeStations: allStations.filter((s) => s.active).length,
+        newMeasurements: Object.keys(allMeasurements).length,
+        avgWaterTemp: 0,
+        avgCO2: 0,
+        integrityScore: summary.overallScore,
+        sensorsVerified: summary.sensorsVerified,
+        sensorsFlagged: summary.sensorsWarning + summary.sensorsFailed,
+      })
 
       console.log(
         `[climate/monitor] Cycle complete: ${allStations.length} stations, ` +
@@ -308,64 +402,77 @@ class ClimateMonitor {
     }
   }
 
-  /** Compute a simplified IntegrityUpdate */
-  private computeIntegrity(
-    stations: ClimateStation[],
-    measurements: Record<string, ClimateMeasurement>,
-    storms: Storm[],
-    spaceWeather: SpaceWeather | null,
-    lightning: unknown[],
-    aircraft: unknown[],
-    vessels: unknown[],
-    wildfires: unknown[],
-    earthquakes: unknown[],
-  ): IntegrityUpdate {
-    const now = Date.now()
-    let totalChecks = 0
-    let passed = 0
-    let warnings = 0
-    let failed = 0
+  /** Compute IntegritySummary from sensor health, data flow, and cross-verifications */
+  private computeIntegritySummary(
+    sensorHealth: Map<string, SensorHealth>,
+    dataFlow: DataFlowHealth[],
+    crossVerifications: CrossVerification[],
+  ): IntegritySummary {
+    const sensors = Array.from(sensorHealth.values())
+    const sensorsVerified = sensors.filter((s) => s.status === 'verified').length
+    const sensorsWarning = sensors.filter((s) => s.status === 'warning').length
+    const sensorsFailed = sensors.filter((s) => s.status === 'failed').length
 
-    // Check each station for data freshness
-    for (const s of stations) {
-      totalChecks++
-      const m = measurements[s.id]
-      if (!m) {
-        failed++
-        continue
+    const sensorLayerScore =
+      sensors.length > 0
+        ? sensors.reduce((a, s) => a + s.integrityScore, 0) / sensors.length
+        : 0
+
+    const pipelinesActive = dataFlow.filter((d) => d.status === 'verified').length
+    const pipelinesDegraded = dataFlow.filter(
+      (d) => d.status === 'warning' || d.status === 'failed',
+    ).length
+    const dataFlowLayerScore =
+      dataFlow.length > 0
+        ? dataFlow.reduce((a, d) => a + d.pipelineScore, 0) / dataFlow.length
+        : 0
+
+    const resultsValidated = crossVerifications.length
+    const resultsFlagged = crossVerifications.filter((v) => v.flags.length > 0).length
+    const resultsLayerScore =
+      crossVerifications.length > 0
+        ? crossVerifications.reduce((a, v) => a + v.verificationScore, 0) / crossVerifications.length
+        : 0
+
+    let totalFlags = 0
+    let criticalFlags = 0
+    let warningFlags = 0
+    let crossSourceMatches = 0
+    let crossSourceMismatches = 0
+
+    for (const v of crossVerifications) {
+      for (const f of v.flags) {
+        totalFlags++
+        if (f.severity === 'critical') criticalFlags++
+        else if (f.severity === 'warning') warningFlags++
       }
-      const age = now - m.timestamp
-      if (age < STALE_DATA_MS) {
-        passed++
-      } else if (age < 24 * 60 * 60 * 1000) {
-        warnings++
-      } else {
-        failed++
+      for (const cs of v.crossSourceAgreement) {
+        if (cs.agreement) crossSourceMatches++
+        else crossSourceMismatches++
       }
     }
 
-    const avgIntegrityScore = totalChecks > 0 ? passed / totalChecks : 0
+    const overallScore = (sensorLayerScore + dataFlowLayerScore + resultsLayerScore) / 3
 
     return {
-      sensorHealth: [],
-      dataFlowHealth: [],
-      crossVerifications: [],
-      summary: {
-        totalChecks,
-        passed,
-        warnings,
-        failed,
-        avgIntegrityScore,
-      },
-      storms,
-      lightningStrikes: lightning,
-      // Live feeds already cap at 500 items each — no viewport culling needed
-      vessels,
-      aircraft,
-      earthquakes,
-      spaceWeather,
-      wildfires,
-      timestamp: now,
+      overallScore,
+      sensorLayerScore,
+      dataFlowLayerScore,
+      resultsLayerScore,
+      totalSensorsMonitored: sensors.length,
+      sensorsVerified,
+      sensorsWarning,
+      sensorsFailed,
+      pipelinesActive,
+      pipelinesDegraded,
+      resultsValidated,
+      resultsFlagged,
+      totalFlags,
+      criticalFlags,
+      warningFlags,
+      dataPointsVerified: Object.keys(this.measurements).length,
+      crossSourceMatches,
+      crossSourceMismatches,
     }
   }
 
