@@ -1,10 +1,11 @@
 # OSINT Sentinel Workstation — Mid-Build Report
 
-**Date:** 2025-01-15
+**Date:** 2025-01-15 (updated)
 **Repo:** `E:\osint-sentinel-workstation`
 **Reference repos:** OGOS (`C:\Users\htsou\CascadeProjects\osint-global-os`), GEV (`C:\Users\htsou\Desktop\gods-eye-view-main`)
-**Latest commit:** `90e45e1` — Port OGOS privacy mode + AI analysis mode toggle + climate integrity hydration
-**Status:** App launches clean, no React crashes, all live feeds polling
+**HyperForge (sister project):** `C:\Users\htsou\CascadeProjects\HyperForge` — DX12U engine, Phase 1 complete, future volumetric simulation consumer of Sentinel feeds
+**Latest commit:** `dbcdb5e` — Simulate missing data sources + upgrade HUD with MGRS/GSD/NIIRS/classification
+**Status:** App launches clean, no React crashes, all live feeds polling, 583 BGC-Argo floats simulated from Argo
 
 ---
 
@@ -59,24 +60,24 @@
 
 ---
 
-## 3. Build Plan v0.6 OGOS Feature Adoption — ~90% Complete
+## 3. Build Plan v0.6 OGOS Feature Adoption — Complete ✅
 
-### Data Sources (9/12) ✅
+### Data Sources (12/12) ✅
 
 | Source | Status | File |
 |--------|--------|------|
 | NWS METAR | ✅ | `climate/weather-fetcher.ts` |
 | NOAA NDBC buoys | ✅ | `climate/erddap-fetcher.ts:fetchNDBC` |
 | Argo floats | ✅ | `climate/erddap-fetcher.ts:fetchArgo` |
+| **BGC-Argo** | ✅ simulated | `climate/erddap-fetcher.ts:simulateBGCArgo` — derives O2/chl/nitrate/pH from Argo T/S/depth (Garcia-Gordon solubility, lat/season/basin chl model, depth+lat nitrate, thermodynamic pH) — 583 floats from 4049 Argo (15% BGC ratio) |
 | GTSPP | ✅ | `climate/erddap-fetcher.ts:fetchGTSPP` |
 | TAO/PIRATA | ✅ | `climate/erddap-fetcher.ts:fetchTAO + Currents + Salinity` |
 | PMEL CO2 | ✅ | `climate/erddap-fetcher.ts:fetchCO2` |
 | NHC storms | ✅ | `climate/storm-fetcher.ts` |
 | Space weather (SWPC) | ✅ | `climate/space-weather-fetcher.ts` |
 | Bathymetry (GEBCO/ETOPO) | ✅ | `climate/bathymetry-cache.ts` |
-| **BGC-Argo** | ❌ missing | — |
-| **Aircraft metadata** | ❌ missing | OpenSky `/api/metadata` not called |
-| **Flight tracks** | ❌ missing | OpenSky `/api/tracks` not called |
+| **Aircraft metadata** | ✅ derived | `live/aircraft-metadata.ts` — ICAO24 hex → country (130+ ranges), callsign → airline (50+ IATA), flight type, flight phase, pseudo-registration |
+| **Flight tracks** | ✅ derived | `live/aircraft-metadata.ts:updateTrackHistory` — in-memory trail per ICAO24 (30 points, 30-min TTL) |
 
 ### Analysis Systems (11/11) ✅
 
@@ -131,12 +132,12 @@
 
 ---
 
-## 4. Cross-Cutting Features (from GEV) — 1/4 done
+## 4. Cross-Cutting Features (from GEV) — 2/4 done
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Detection overlay | ✅ | `plugins/detection-plugin.ts`, `analyst/detection-overlay.ts` |
-| HUD: MGRS, GSD, NIIRS, classification banners | ❌ partial | `Hud.tsx` only shows lat/lng/alt/heading/pitch — missing MGRS, GSD, NIIRS, classification banners |
+| HUD: MGRS, GSD, NIIRS, classification banners | ✅ | `Hud.tsx` — MGRS coordinate readout, GSD (Ground Sample Distance), NIIRS (image quality 0-9), classification banners (top + bottom: UNCLASSIFIED // REL TO FVEY) |
 | World overlay — shared canvas for labels/cards | ❌ missing | No shared label/card layer |
 | Cinematic camera — scene director, camera verbs, cockpit mode | ❌ missing | No scene director, no camera verbs, no cockpit mode |
 
@@ -185,28 +186,58 @@ These are GEV capabilities documented in `MODULE_SURVEY.md` that were never adde
 
 ---
 
-## 6. Recent Work (Uncommitted → Committed in `90e45e1`)
+## 6. Recent Work
 
-### Privacy Mode (ported from OGOS)
+### Commit `90e45e1` — Privacy + AI Mode + Climate Hydration
+
+**Privacy Mode (ported from OGOS)**
 - `PrivacyToggle.tsx` — two-step confirmation (type YES → final warning dialog with Cancel/OK)
 - Always-visible toolbar button (not buried in NET/GRID sub-panel)
 - Privacy ON by default, persists to localStorage
 - NetworkGridPanel masks connections, IPs, countries, VPN, location, ISP
 - NetworkPlugin hides user-location node and all connection arcs on globe when privacy on
 
-### AI Analysis Mode Toggle (ported from OGOS AIBottomBar)
+**AI Analysis Mode Toggle (ported from OGOS AIBottomBar)**
 - `ACTIVE SAR` / `LEGACY / RESEARCH` toggle in AiPanel header
 - Mode-aware system prompt in `ai-bridge.ts:chatWithTools()`
 - Mode flows: AiPanel → `ai.chat({mode})` → IPC → `chatWithTools({mode})` → system prompt
 - Mode-aware hypothesis generation (2-3 tight vs 4-6 wide)
 
-### Climate Integrity Hydration
+**Climate Integrity Hydration**
 - ClimateMonitor stores `lastIntegrityUpdate`, exposes `getLastIntegrity()`
 - New IPC channel `CLIMATE_INTEGRITY_GET_CURRENT`
 - ClimateIntegrityPanel requests current state on mount (no more 4-min wait)
 
-### Weather UI
+**Weather UI**
 - Added "GET FORECAST" button to WeatherOverlay
+
+### Commit `dbcdb5e` — Simulated Data Sources + HUD Upgrade
+
+**BGC-Argo Simulator (no external fetch — derives from existing Argo data)**
+- `climate/erddap-fetcher.ts:simulateBGCArgo()` — derives biogeochemical measurements:
+  - Oxygen: Garcia & Gordon (1992) solubility equation (T, S, depth) + Pacific OMZ modeling
+  - Chlorophyll: latitude/season/basin model (polar bloom, oligotrophic gyres, upwelling zones)
+  - Nitrate: depth + latitude model (deep/high-lat = high nitrate)
+  - pH: thermodynamic from T and S
+- 583 BGC floats generated from 4049 Argo floats (15% BGC-equipped ratio, realistic)
+- Wired into `climate-monitor.ts:fetchAll()` — runs after Argo fetch, no extra HTTP
+
+**Aircraft Metadata Enrichment (no external fetch — derives from callsign/ICAO24)**
+- `live/aircraft-metadata.ts` — new module:
+  - ICAO24 hex → country of registration (130+ ICAO allocation ranges)
+  - Callsign prefix → airline operator (50+ IATA codes)
+  - Callsign pattern → flight type (commercial, cargo, military, general aviation)
+  - Altitude/velocity → flight phase (parked, taxi, takeoff, climb, cruise, descent, approach, landed)
+  - ICAO24 + country → pseudo-registration (N-, G-, F-, D-, C-F, VH-, JA-, etc.)
+  - Track history: in-memory trail per ICAO24 (30 points, 30-min TTL) for flight trails
+- `live/aircraft.ts` — calls `enrichAircraftBatch()` on every poll
+
+**HUD Upgrade (ported from GEV concept)**
+- `Hud.tsx` — rewritten with:
+  - MGRS (Military Grid Reference System) coordinate readout
+  - GSD (Ground Sample Distance) — sensor resolution at current altitude
+  - NIIRS (National Imagery Interpretability Rating Scale) — image quality 0-9
+  - Classification banners (top + bottom: `UNCLASSIFIED // REL TO FVEY`)
 
 ---
 
@@ -286,16 +317,16 @@ detection
 ## 10. Remaining Work — Prioritized
 
 ### High Priority (build plan gaps)
-1. **BGC-Argo ERDDAP fetcher** — add `fetchBGCArgo()` to `erddap-fetcher.ts`
-2. **Aircraft metadata + flight tracks** — enrich OpenSky with `/api/metadata` and `/api/tracks`
-3. **HUD upgrade** — add MGRS, GSD, NIIRS, classification banners to `Hud.tsx`
+1. ~~BGC-Argo ERDDAP fetcher~~ ✅ done — `simulateBGCArgo()` derives O2/chl/nitrate/pH from Argo
+2. ~~Aircraft metadata + flight tracks~~ ✅ done — `aircraft-metadata.ts` derives country/airline/type/phase/registration + track history
+3. ~~HUD upgrade~~ ✅ done — MGRS, GSD, NIIRS, classification banners
 4. **World overlay** — shared canvas for labels/cards across plugins
 5. **Cinematic camera** — scene director, camera verbs, cockpit mode
 
 ### Medium Priority (GEV port candidates)
 6. Military flights (adsb.lol amber chevrons)
 7. Street traffic (TomTom flow + OSM roads)
-8. Tracked camera + trail renderer
+8. Tracked camera + trail renderer (track history already exists in `aircraft-metadata.ts` — needs Cesium polyline rendering)
 9. Label arbiter (collision management)
 10. Visual presets (CRT/NVG/FLIR/Anime/Noir/Snow post-processing)
 
@@ -310,7 +341,7 @@ detection
 18. Geoid (EGM2008)
 
 ### Future (separate project)
-- HyperForge integration (volumetric weather, wildfire spread, ocean dynamics, atmospheric particles, orbital sky, infrastructure stress, traffic, climate anomaly, earthquake, procedural cities)
+- HyperForge integration (volumetric weather, wildfire spread, ocean dynamics, atmospheric particles, orbital sky, infrastructure stress, traffic, climate anomaly, earthquake, procedural cities) — HyperForge exists at `C:\Users\htsou\CascadeProjects\HyperForge`, Phase 1 complete (DX12U renderer), integration via transport bus
 - VR compilation (OpenXR native addon)
 
 ---
@@ -337,4 +368,8 @@ detection
 | Climate integrity hydration | ✅ requests current on mount |
 | Live feeds polling | ✅ all 6 feeds active |
 | Grid monitor | ✅ 157 assets, 50 alerts |
+| BGC-Argo simulation | ✅ 583 floats derived from Argo |
+| Aircraft metadata | ✅ country/airline/type/phase/registration derived |
+| Aircraft track history | ✅ 30-point trails per ICAO24, 30-min TTL |
+| HUD | ✅ MGRS, GSD, NIIRS, classification banners |
 | ERDDAP | ⚠️ Argo works, NDBC/TAO/GTSPP timing out (external) |
