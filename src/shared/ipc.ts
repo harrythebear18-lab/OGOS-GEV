@@ -44,6 +44,7 @@ export const IPC = {
   // Live data feeds (pushed from main to renderer)
   LIVE_UPDATE: 'live:update',
   CLIMATE_UPDATE: 'climate:update',
+  CLIMATE_GET_CURRENT: 'climate:get-current',
   AIRCRAFT_UPDATE: 'aircraft:update',
   EARTHQUAKE_UPDATE: 'earthquake:update',
   FIRE_UPDATE: 'fire:update',
@@ -69,6 +70,7 @@ export const IPC = {
 
   // Predictions (pushed)
   PREDICTION_UPDATE: 'prediction:update',
+  PREDICTION_GET_CURRENT: 'prediction:get-current',
 
   // Aircraft weather alerts (pushed)
   AIRCRAFT_WEATHER_ALERTS: 'aircraft:weather-alerts',

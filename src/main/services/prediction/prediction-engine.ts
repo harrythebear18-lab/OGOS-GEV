@@ -48,6 +48,7 @@ export class PredictionEngine {
   private sensorHealth = new Map<string, SensorHealth>()
   private lightning: { lat: number; lon: number; timestamp: number }[] = []
   private radarData: RadarData | null = null
+  private lastUpdate: PredictionUpdate | null = null
 
   /** Called by ClimateMonitor when new climate data is available. */
   updateClimateData(
@@ -150,7 +151,13 @@ export class PredictionEngine {
     console.log(`[prediction/engine] Update: ${totalPredictions} predictions, ${highRiskCount} high-risk, ${criticalRiskCount} critical, avg confidence ${avgConfidence.toFixed(0)}%`)
 
     broadcastToWindows(IPC.PREDICTION_UPDATE, update)
+    this.lastUpdate = update
     return update
+  }
+
+  /** Get the last prediction update (or null if not yet run). */
+  getLastUpdate(): PredictionUpdate | null {
+    return this.lastUpdate
   }
 
   /** Start the prediction cycle — runs after 5s delay, then every 4 minutes. */

@@ -1,22 +1,20 @@
-Add elegant weather forecast + prediction engine UI overlays
+Fix climate stations + predictions not loading on plugin activation
 
-- WeatherOverlay: floating panel with current conditions card (temp, feels-like,
-  wind, humidity, precip, weather icon) + 24h hourly forecast chart (SVG temp
-  line + precip probability bars) + radar/satellite toggle buttons
-- PredictionPanel: floating panel subscribing to PREDICTION_UPDATE IPC channel,
-  showing 7-model prediction engine output:
-  - Summary stats (total, high risk, critical, avg confidence)
-  - Severe weather alerts (expandable, severity/confidence badges)
-  - Storm track predictions (expandable, with track points + wind speed)
-  - Climate anomaly predictions (expandable)
-  - Sensor failure predictions (expandable)
-  - Precipitation forecast (expandable)
-  - SST anomalies (region + deviation)
-  - Teleconnection indices (ENSO, NAO, etc.)
-- Add weather-codes.ts shared helper for WMO weather code descriptions
-- Add predictions namespace to globals.d.ts type definitions
-- Wire both overlays into App.tsx with toolbar buttons (INTEGRITY, WEATHER, PREDICT)
-- Only one overlay visible at a time (mutually exclusive toggles)
+Root cause: plugins subscribed to future IPC broadcasts only. If the backend
+already broadcast before the plugin activated, it would wait up to 4 minutes
+for the next cycle before showing any data.
+
+Fix:
+- Add CLIMATE_GET_CURRENT + PREDICTION_GET_CURRENT IPC channels
+- Add IPC handlers that return the last known climate state + last prediction
+- Store last PredictionUpdate in PredictionEngine + add getLastUpdate() getter
+- Add getCurrent() to preload climate + predictions namespaces
+- Update climate-stations plugin to request current state on register
+- Update PredictionPanel to request current state on mount
+
+Now when the climate-stations plugin is activated, it immediately requests
+the last known state (4000+ Argo floats, buoys, etc.) instead of waiting
+for the next 4-minute polling cycle.
 
 Generated with [Devin](https://devin.ai)
 

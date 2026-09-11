@@ -109,6 +109,7 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
       ipcRenderer.on(IPC.CLIMATE_UPDATE, handler)
     },
+    getCurrent: () => ipcRenderer.invoke(IPC.CLIMATE_GET_CURRENT),
     onIntegrity: (cb: (update: unknown) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
       ipcRenderer.on(IPC.CLIMATE_INTEGRITY, handler)
@@ -148,6 +149,7 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, update: unknown) => cb(update)
       ipcRenderer.on(IPC.PREDICTION_UPDATE, handler)
     },
+    getCurrent: () => ipcRenderer.invoke(IPC.PREDICTION_GET_CURRENT),
   },
 
   /* ── Grid (pushed + invoke) ── */

@@ -24,6 +24,13 @@ export default function PredictionPanel({ onClose }: PredictionPanelProps) {
   const [prediction, setPrediction] = useState<PredictionUpdate | null>(null)
 
   useEffect(() => {
+    // Request current state immediately (don't wait for next broadcast)
+    window.api.predictions.getCurrent().then((update: unknown) => {
+      if (update) setPrediction(update as PredictionUpdate)
+    }).catch((err: unknown) => {
+      console.warn('[prediction-panel] getCurrent failed:', err)
+    })
+
     const unsub = window.api.predictions.onUpdate((update: unknown) => {
       setPrediction(update as PredictionUpdate)
     })

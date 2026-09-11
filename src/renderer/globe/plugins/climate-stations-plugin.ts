@@ -84,6 +84,16 @@ export class ClimateStationsPlugin implements EarthEnginePlugin {
 
     ctx.ipc.climate.onUpdate(handler)
     this.unsubscribe = () => ctx.ipc.off('climate:update')
+
+    // Request current state immediately (don't wait up to 4min for next broadcast)
+    ctx.ipc.climate.getCurrent().then((update: unknown) => {
+      const u = update as ClimateUpdate | null
+      if (u?.stations) {
+        this.handleUpdate(u.stations, u.measurements)
+      }
+    }).catch((err: unknown) => {
+      console.warn('[climate-stations] getCurrent failed:', err)
+    })
   }
 
   unregister(): void {

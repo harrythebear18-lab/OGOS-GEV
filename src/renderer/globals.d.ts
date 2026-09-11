@@ -65,6 +65,7 @@ declare global {
 
       climate: {
         onUpdate: (cb: (update: unknown) => void) => () => void
+        getCurrent: () => Promise<any>
         onIntegrity: (cb: (update: unknown) => void) => () => void
         onAlert: (cb: (alert: unknown) => void) => () => void
         setViewport: (bounds: unknown) => void
@@ -104,6 +105,7 @@ declare global {
 
       predictions: {
         onUpdate: (cb: (update: unknown) => void) => () => void
+        getCurrent: () => Promise<any>
       }
 
       climateHelpers: {

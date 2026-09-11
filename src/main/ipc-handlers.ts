@@ -427,6 +427,20 @@ export function registerIpcHandlers(): void {
   ipcMain.on(IPC.CLIMATE_SET_VIEWPORT, (_event, bounds) => {
     climateMonitor.setViewportBounds(bounds)
   })
+  ipcMain.handle(IPC.CLIMATE_GET_CURRENT, () => {
+    const stations = climateMonitor.getStations()
+    const measurements = climateMonitor.getMeasurements()
+    if (stations.length === 0) return null
+    return {
+      stations,
+      measurements,
+      stats: { totalStations: stations.length, activeStations: stations.filter((s) => s.active).length, invalidatedStations: 0, byType: {}, bySource: {} },
+      timestamp: Date.now(),
+    }
+  })
+  ipcMain.handle(IPC.PREDICTION_GET_CURRENT, () => {
+    return predictionEngine.getLastUpdate()
+  })
   ipcMain.handle(IPC.CLIMATE_WHITELIST, (_event, stationId: string) => {
     climateMonitor.whitelistStation?.(stationId)
   })
