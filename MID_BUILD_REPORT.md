@@ -4,8 +4,8 @@
 **Repo:** `E:\osint-sentinel-workstation`
 **Reference repos:** OGOS (`C:\Users\htsou\CascadeProjects\osint-global-os`), GEV (`C:\Users\htsou\Desktop\gods-eye-view-main`)
 **HyperForge (sister project):** `C:\Users\htsou\CascadeProjects\HyperForge` — DX12U engine, Phase 1 complete, future volumetric simulation consumer of Sentinel feeds
-**Latest commit:** `dbcdb5e` — Simulate missing data sources + upgrade HUD with MGRS/GSD/NIIRS/classification
-**Status:** App launches clean, no React crashes, all live feeds polling, 583 BGC-Argo floats simulated from Argo
+**Latest commit:** `c397a0d` — AI + web search respect privacy mode — user is locationless when privacy ON
+**Status:** App launches clean, no React crashes, all live feeds polling, 583 BGC-Argo floats simulated from Argo, AI/web search privacy-aware
 
 ---
 
@@ -196,6 +196,14 @@ These are GEV capabilities documented in `MODULE_SURVEY.md` that were never adde
 - Privacy ON by default, persists to localStorage
 - NetworkGridPanel masks connections, IPs, countries, VPN, location, ISP
 - NetworkPlugin hides user-location node and all connection arcs on globe when privacy on
+- **AI + web search respect privacy mode** (commit `c397a0d`):
+  - AI system prompt includes strict PRIVACY MODE rules — user is LOCATIONLESS
+  - Never says "your location", "you are near", "from your position"
+  - Viewport is "the selected region", not "your area" — context vs identity
+  - Scene context JSON coarsened to ~1 degree (~111km) when privacy on
+  - Reverse geocode (place name lookup) skipped when privacy on
+  - Web search tool coarsens location to whole degrees
+  - Two modes: 🔒 Privacy ON → Safe OSINT | 🔓 Privacy OFF → Full OSINT
 
 **AI Analysis Mode Toggle (ported from OGOS AIBottomBar)**
 - `ACTIVE SAR` / `LEGACY / RESEARCH` toggle in AiPanel header
