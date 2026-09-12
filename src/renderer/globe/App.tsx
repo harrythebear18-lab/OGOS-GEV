@@ -19,6 +19,8 @@ import NetworkGridPanel from './NetworkGridPanel'
 import PrivacyToggle, { type SecurityLevel, networkVisible as networkVisibleFor } from './PrivacyToggle'
 import ExplainabilityOverlay, { type Hypothesis } from './ExplainabilityOverlay'
 import AiPanel from './AiPanel'
+import { WorldOverlay } from './WorldOverlay'
+import WorldOverlayLayer from './WorldOverlayLayer'
 import { pluginManager } from './plugins'
 import { networkPlugin } from './plugins/network-plugin'
 import type { PluginContext } from './plugins'
@@ -38,6 +40,7 @@ const MemoStatusBar = memo(StatusBar)
 export default function App() {
   // ── Globe Renderer state ──
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
+  const [worldOverlay, setWorldOverlay] = useState<WorldOverlay | null>(null)
   const [gibsLayers, setGibsLayers] = useState<GIBSLayer[]>([])
   const [imageryLayer, setImageryLayer] = useState<string>('esri')
   const [imageryOpacity, setImageryOpacity] = useState<number>(1.0)
@@ -270,7 +273,11 @@ export default function App() {
         terrainExaggeration={terrainExaggeration}
         roadsVisible={roadsVisible}
         labelsVisible={labelsVisible}
-        onViewerReady={setViewer}
+        onViewerReady={(v) => {
+          setViewer(v)
+          const overlay = new WorldOverlay(v)
+          setWorldOverlay(overlay)
+        }}
         onCameraMove={onCameraMove}
         drawMode={drawMode}
         onSelectionChange={setSelection}
@@ -293,6 +300,9 @@ export default function App() {
 
       {/* Satellites overlay — SGP4 driven by Cesium clock */}
       {viewer && satellitesVisible && <SatellitesOverlay viewer={viewer} enabled={satellitesVisible} />}
+
+      {/* World overlay — shared label/card layer with collision management */}
+      <WorldOverlayLayer overlay={worldOverlay} />
 
       {/* HUD bar */}
       <MemoHud viewport={hudViewport} imageryLayer={imageryLayer} onResetNorth={resetNorth} />
