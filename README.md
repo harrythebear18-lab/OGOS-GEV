@@ -15,8 +15,8 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **3D Cesium globe** — Esri imagery base, terrain-aware, with cinematic camera and
   clamped-to-ground overlays. Not a 2D map.
 - **Live feeds** — SGP4 satellites, ADS-B aircraft (rate-limited), AIS vessels, FIRMS fire
-  detections, USGS earthquakes, lightning, NHC storms, space weather, grid assets, network
-  status.
+  detections, USGS earthquakes, Blitzortung lightning (WebSocket, character-based LZW),
+  NHC storms, space weather, grid assets, network status.
 - **Terrain analysis** — DEM, slope bands, anomaly detection (depressions/prominences),
   runoff flow paths (D8 + Priority-Flood + SCS Curve Number), flood risk (Kirpich time of
   concentration), watershed divides (ridge polylines), rest points, fall risk, canopy.
@@ -41,14 +41,43 @@ DEM analysis, and local compute — all in one unified cockpit window.
 
 ## Tech stack
 
-- **Shell:** Electron 32
+- **Shell:** Electron 32 (Chromium 128, Node 20)
 - **Build:** electron-vite + Vite 5
 - **UI:** React 18 + TypeScript
 - **3D globe:** CesiumJS
+- **GPU compute:** WebGPU (WGSL compute shaders — DEM slope/hillshade, NDVI/NDWI/NBR, anomaly detection)
+- **Hardware codecs:** WebCodecs (ImageDecoder, VideoEncoder/Decoder — NVENC/QuickSync)
+- **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool for DEM analysis, prediction)
+- **Streaming I/O:** ReadableStream pipelines with backpressure (replaces arrayBuffer bloat)
 - **SGP4 / orbital math:** `satellite.js`
 - **KML/KMZ:** `@xmldom/xmldom` + `adm-zip`
 - **AI:** Ollama (Qwen-VL) + CLIP (local FastAPI, CUDA-backed)
+- **Lightning:** Blitzortung WebSocket (character-based LZW decode, UTF-8)
 - **Build output:** `E:/osint-builds/release`
+
+## HAL — Hardware Abstraction Layer
+
+The workstation probes and uses real hardware capabilities instead of
+JavaScript busywork:
+
+| Subsystem | What it touches | Status |
+|-----------|----------------|--------|
+| WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | active |
+| Worker threads | OS threads via worker_threads + SharedArrayBuffer | active |
+| Streaming I/O | ReadableStream backpressure, zero-copy SAB transfer | active |
+| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | active |
+| WASM SIMD | 128-bit CPU vector units | probed (not yet used) |
+| CUDA native | NVIDIA GPU compute (heavy workloads) | deferred |
+| OpenXR native | Meta Quest 3S PC Link | scaffold (unbuilt) |
+
+HAL probes on startup:
+```
+[hal] CPU: 16 cores, 32768/65536 MB free
+[hal] Worker threads: yes, SAB: yes
+[hal] Renderer: webgpu=true, webcodecs=true, wasmSimd=false
+[hal/gpu-compute] WebGPU device: nvidia
+[hal/gpu-compute] compiled 7 compute kernels
+```
 
 ## AI services
 
@@ -80,7 +109,13 @@ osint-sentinel-workstation/
 │   ├── main/              # Electron main process
 │   │   ├── index.ts       # single-window lifecycle
 │   │   ├── ipc-handlers.ts # typed IPC router
-│   │   └── services/      # terrain, live feeds, climate, grid, network, AI
+│   │   └── services/
+│   │       ├── hal/       # Hardware Abstraction Layer
+│   │       │   ├── hal-manager.ts     # probes CPU/GPU/native/SAB
+│   │       │   ├── worker-pool.ts     # worker_threads + SharedArrayBuffer
+│   │       │   ├── streaming-io.ts   # ReadableStream pipelines
+│   │       │   └── workers/           # CPU worker scripts
+│   │       ├── system-verifier.ts     # on-demand health check
 │   │       ├── runoff-service.ts    # D8 + Priority-Flood + SCS hydrology
 │   │       ├── canopy-service.ts    # GIBS NDVI + DEM roughness canopy height
 │   │       ├── ollama-service.ts    # local LLM
@@ -92,6 +127,12 @@ osint-sentinel-workstation/
 │       └── globe/         # single 3D Cesium cockpit
 │           ├── App.tsx    # cockpit shell + plugin manager
 │           ├── Globe.tsx   # Cesium viewer + drawing manager
+│           ├── hal/        # renderer-side HAL
+│           │   ├── gpu-compute.ts    # WebGPU compute shaders (WGSL)
+│           │   ├── webcodecs.ts      # hardware video/image codecs
+│           │   └── index.ts           # HAL init + capability reporting
+│           ├── WorldOverlay.ts  # shared HTML card/label layer (globe-occluded)
+│           ├── SystemVerifierPanel.tsx
 │           ├── DrawTools.tsx
 │           ├── PluginPanel.tsx
 │           ├── InspectorPanel.tsx
@@ -179,6 +220,13 @@ npm run dist:portable  # portable Windows build
 ```
 
 ## Status
+
+v0.7 — HAL (Hardware Abstraction Layer): WebGPU compute shaders (7 WGSL kernels
+for DEM slope/hillshade, NDVI/NDWI/NBR, anomaly detection), worker_threads +
+SharedArrayBuffer pool, streaming I/O with backpressure, WebCodecs hardware
+codecs. System Verifier (on-demand health check, privacy-aware). Blitzortung
+lightning fixed (UTF-8 character-based LZW decode). Globe occlusion fixed
+(WorldOverlay cards + plugin entities no longer show through the globe).
 
 v0.6 — GEV AI architecture ported (analyst engine, action runner, detection overlay,
 context store, annotation resolver). Hydrology rewritten with proper D8 + Priority-Flood
