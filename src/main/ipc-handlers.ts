@@ -432,6 +432,13 @@ export function registerIpcHandlers(): void {
     return getLightningFeatures()
   })
 
+  /* ── System verification ── */
+  ipcMain.handle('system:verify', async (_event, args) => {
+    const { verifySystem } = await import('./services/system-verifier')
+    const securityStage: number = args?.securityStage ?? 0
+    return verifySystem(securityStage)
+  })
+
   /* ── Climate / Ocean ── */
   ipcMain.on(IPC.CLIMATE_SET_VIEWPORT, (_event, bounds) => {
     climateMonitor.setViewportBounds(bounds)

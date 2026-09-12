@@ -16,6 +16,7 @@ import WeatherOverlay from './WeatherOverlay'
 import PredictionPanel from './PredictionPanel'
 import IncidentPanel from './IncidentPanel'
 import NetworkGridPanel from './NetworkGridPanel'
+import SystemVerifierPanel from './SystemVerifierPanel'
 import PrivacyToggle, { type SecurityLevel, networkVisible as networkVisibleFor } from './PrivacyToggle'
 import ExplainabilityOverlay, { type Hypothesis } from './ExplainabilityOverlay'
 import AiPanel from './AiPanel'
@@ -65,6 +66,7 @@ export default function App() {
   const [showPredictions, setShowPredictions] = useState<boolean>(false)
   const [showIncident, setShowIncident] = useState<boolean>(false)
   const [showNetGrid, setShowNetGrid] = useState<boolean>(false)
+  const [showVerify, setShowVerify] = useState<boolean>(false)
   const [securityLevel, setSecurityLevel] = useState<SecurityLevel>(0)
   const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
@@ -330,6 +332,7 @@ export default function App() {
         <ToolbarBtn label="PREDICT" color="#a04aff" active={showPredictions} onClick={() => { setShowPredictions(!showPredictions); setShowIntegrity(false); setShowWeather(false); setShowIncident(false); setShowNetGrid(false) }} />
         <ToolbarBtn label="INCIDENT" color="#ff8a4a" active={showIncident} onClick={() => { setShowIncident(!showIncident); setShowIntegrity(false); setShowWeather(false); setShowPredictions(false); setShowNetGrid(false) }} />
         <ToolbarBtn label="NET/GRID" color="#4affff" active={showNetGrid} onClick={() => { setShowNetGrid(!showNetGrid); setShowIntegrity(false); setShowWeather(false); setShowPredictions(false); setShowIncident(false) }} />
+        <ToolbarBtn label="VERIFY" color="#ffea4a" active={showVerify} onClick={() => { setShowVerify(!showVerify); setShowIntegrity(false); setShowWeather(false); setShowPredictions(false); setShowIncident(false); setShowNetGrid(false) }} />
       </div>
 
       {/* Climate integrity panel — toggleable floating panel */}
@@ -388,6 +391,13 @@ export default function App() {
       {showNetGrid && (
         <div style={{ position: 'absolute', top: 88, right: 12, zIndex: 200 }}>
           <NetworkGridPanel privacyMode={!networkVisibleFor(securityLevel)} />
+        </div>
+      )}
+
+      {/* System verifier panel — on-demand health check */}
+      {showVerify && (
+        <div style={{ position: 'absolute', top: 88, right: 12, zIndex: 200, width: 360 }}>
+          <SystemVerifierPanel securityLevel={securityLevel} onClose={() => setShowVerify(false)} />
         </div>
       )}
 
