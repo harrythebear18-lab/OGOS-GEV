@@ -14,11 +14,13 @@
  */
 
 import * as Cesium from 'cesium'
+import type { WorldOverlay } from '../WorldOverlay'
 
 export interface PluginContext {
   viewer: Cesium.Viewer
   sceneContext: unknown
   ipc: any  // typeof window.api — typed as any to allow dynamic property access
+  worldOverlay?: WorldOverlay  // shared label/card layer with collision management
 }
 
 export interface PluginStats {

@@ -8,6 +8,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WorldOverlay } from '../WorldOverlay'
 import type { LiveFeature, LiveUpdate } from '@shared/types'
 
 interface FireFeature {
@@ -44,6 +45,7 @@ export class FiresPlugin implements EarthEnginePlugin {
 
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
+  private worldOverlay: WorldOverlay | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private show = true
   private knownIds = new Set<string>()
@@ -51,6 +53,7 @@ export class FiresPlugin implements EarthEnginePlugin {
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
+    this.worldOverlay = ctx.worldOverlay ?? null
     this.dataSource = new Cesium.CustomDataSource('fires')
     ctx.viewer.dataSources.add(this.dataSource)
     this.status = { count: 0, status: 'loading' }
@@ -84,10 +87,14 @@ export class FiresPlugin implements EarthEnginePlugin {
       clearInterval(this.pollTimer)
       this.pollTimer = null
     }
+    if (this.worldOverlay) {
+      this.worldOverlay.clearCategory('fire')
+    }
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
+    this.worldOverlay = null
     this.knownIds.clear()
     this.viewer = null
     this.status = { count: 0, status: 'disabled' }
@@ -138,6 +145,7 @@ export class FiresPlugin implements EarthEnginePlugin {
   private handleFullUpdate(features: FireFeature[]): void {
     if (!this.dataSource) return
     this.dataSource.entities.removeAll()
+    this.worldOverlay?.clearCategory('fire')
     this.knownIds.clear()
 
     for (const f of features) {
@@ -153,6 +161,7 @@ export class FiresPlugin implements EarthEnginePlugin {
 
     for (const id of removed) {
       this.dataSource.entities.removeById(`fire:${id}`)
+      this.worldOverlay?.removeCard(`fire:${id}`)
       this.knownIds.delete(id)
     }
 
@@ -197,6 +206,21 @@ export class FiresPlugin implements EarthEnginePlugin {
         acqTime: f.acqTime,
       },
     } as any)
+
+    // Register card only for high-intensity fires (FRP > 50 MW)
+    // This keeps the overlay clean — most fires are small
+    if (this.worldOverlay && f.frp > 50) {
+      this.worldOverlay.registerCard({
+        id: `fire:${f.id}`,
+        lat: f.lat,
+        lon: f.lon,
+        title: `FIRE ${f.frp.toFixed(0)}MW`,
+        subtitle: `${f.brightness.toFixed(0)}K • ${f.confidence} • ${f.satellite}`,
+        category: 'fire',
+        priority: Math.min(10, Math.round(f.frp / 20)), // higher FRP = higher priority
+        color: '#ff4a4a',
+      })
+    }
   }
 }
 

@@ -189,10 +189,11 @@ export default function App() {
         lkp: lkpPin,
       },
       ipc: window.api,
+      worldOverlay: worldOverlay ?? undefined,
     }
     pluginCtxRef.current = ctx
     pluginManager.setContext(ctx)
-  }, [viewer, selection, lkpPin])
+  }, [viewer, selection, lkpPin, worldOverlay])
 
   // Shutdown plugins on unmount
   useEffect(() => {

@@ -9,6 +9,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WorldOverlay } from '../WorldOverlay'
 import type { LiveFeature, LiveUpdate } from '@shared/types'
 
 interface AircraftFeature {
@@ -49,6 +50,7 @@ export class AircraftPlugin implements EarthEnginePlugin {
 
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
+  private worldOverlay: WorldOverlay | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private show = true
   private knownIcao = new Set<string>()
@@ -59,6 +61,7 @@ export class AircraftPlugin implements EarthEnginePlugin {
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
+    this.worldOverlay = ctx.worldOverlay ?? null
     this.dataSource = new Cesium.CustomDataSource('aircraft')
     ctx.viewer.dataSources.add(this.dataSource)
     this.status = { count: 0, status: 'loading' }
@@ -99,10 +102,14 @@ export class AircraftPlugin implements EarthEnginePlugin {
       clearInterval(this.deadReckonTimer)
       this.deadReckonTimer = null
     }
+    if (this.worldOverlay) {
+      this.worldOverlay.clearCategory('aircraft')
+    }
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
+    this.worldOverlay = null
     this.knownIcao.clear()
     this.aircraft.clear()
     this.viewer = null
@@ -161,6 +168,7 @@ export class AircraftPlugin implements EarthEnginePlugin {
     }
     for (const icao of toRemove) {
       this.dataSource.entities.removeById(`aircraft:${icao}`)
+      this.worldOverlay?.removeCard(`aircraft:${icao}`)
       this.knownIcao.delete(icao)
       this.aircraft.delete(icao)
     }
@@ -179,6 +187,7 @@ export class AircraftPlugin implements EarthEnginePlugin {
 
     for (const icao of removed) {
       this.dataSource.entities.removeById(`aircraft:${icao}`)
+      this.worldOverlay?.removeCard(`aircraft:${icao}`)
       this.knownIcao.delete(icao)
       this.aircraft.delete(icao)
     }
@@ -208,15 +217,7 @@ export class AircraftPlugin implements EarthEnginePlugin {
           outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
           outlineWidth: 1,
         },
-        label: f.callsign ? {
-          text: f.callsign.trim(),
-          font: '9px monospace',
-          fillColor: Cesium.Color.fromBytes(255, 234, 74, 220),
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -14),
-        } : undefined,
+        // No label here — managed by WorldOverlay for collision
         properties: {
           velocity: f.velocity,
           heading: f.heading,
@@ -232,6 +233,23 @@ export class AircraftPlugin implements EarthEnginePlugin {
         existing.properties.heading = f.heading
         existing.properties.altitude = f.altitude
       }
+    }
+
+    // Register card through shared WorldOverlay (collision-managed)
+    if (this.worldOverlay) {
+      const speedKt = Math.round(f.velocity * 1.94384)
+      const altKm = (f.altitude / 1000).toFixed(1)
+      this.worldOverlay.registerCard({
+        id: `aircraft:${f.icao24}`,
+        lat: f.lat,
+        lon: f.lon,
+        height: f.altitude,
+        title: f.callsign.trim() || f.icao24.toUpperCase(),
+        subtitle: `${altKm}km • ${speedKt}kt • ${Math.round(f.heading)}°`,
+        category: 'aircraft',
+        priority: 7,
+        color: '#ffea4a',
+      })
     }
   }
 

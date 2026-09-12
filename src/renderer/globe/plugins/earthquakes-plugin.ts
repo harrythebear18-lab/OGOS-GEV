@@ -8,6 +8,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WorldOverlay } from '../WorldOverlay'
 
 const USGS_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson'
 const POLL_INTERVAL = 60_000
@@ -29,6 +30,7 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
 
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
+  private worldOverlay: WorldOverlay | null = null
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private show = true
   private knownIds = new Set<string>()
@@ -36,6 +38,7 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
+    this.worldOverlay = ctx.worldOverlay ?? null
     this.dataSource = new Cesium.CustomDataSource('earthquakes')
     ctx.viewer.dataSources.add(this.dataSource)
     this.status = { count: 0, status: 'loading' }
@@ -52,10 +55,14 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
       clearInterval(this.pollTimer)
       this.pollTimer = null
     }
+    if (this.worldOverlay) {
+      this.worldOverlay.clearCategory('earthquake')
+    }
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
+    this.worldOverlay = null
     this.knownIds.clear()
     this.viewer = null
     this.status = { count: 0, status: 'disabled' }
@@ -110,6 +117,7 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
       if (this.dataSource) {
         for (const id of toRemove) {
           this.dataSource.entities.removeById(`quake:${id}`)
+          this.worldOverlay?.removeCard(`quake:${id}`)
           this.knownIds.delete(id)
         }
 
@@ -137,6 +145,8 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
         ? Cesium.Color.fromBytes(249, 115, 22, 255)
         : Cesium.Color.fromBytes(74, 158, 255, 255)
 
+    const colorHex = f.mag >= 5 ? '#ff4a4a' : f.mag >= 3 ? '#f97316' : '#4a9eff'
+
     // Size scales with magnitude
     const pixelSize = Math.max(4, Math.min(15, f.mag * 2.5))
 
@@ -156,6 +166,20 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
         depth: f.depth,
       },
     } as any)
+
+    // Register card for significant earthquakes (M >= 4.0)
+    if (this.worldOverlay && f.mag >= 4.0) {
+      this.worldOverlay.registerCard({
+        id: `quake:${f.id}`,
+        lat: f.lat,
+        lon: f.lon,
+        title: `M${f.mag.toFixed(1)}`,
+        subtitle: `${f.depth.toFixed(0)}km • ${f.place.slice(0, 30)}`,
+        category: 'earthquake',
+        priority: Math.min(10, Math.round(f.mag * 1.5)),
+        color: colorHex,
+      })
+    }
   }
 }
 

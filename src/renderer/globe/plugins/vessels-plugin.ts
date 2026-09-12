@@ -8,6 +8,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WorldOverlay } from '../WorldOverlay'
 import type { LiveFeature, LiveUpdate } from '@shared/types'
 
 interface VesselFeature {
@@ -44,6 +45,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
 
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
+  private worldOverlay: WorldOverlay | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private show = true
   private knownMmsi = new Set<string>()
@@ -52,6 +54,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
+    this.worldOverlay = ctx.worldOverlay ?? null
     this.dataSource = new Cesium.CustomDataSource('vessels')
     ctx.viewer.dataSources.add(this.dataSource)
     this.status = { count: 0, status: 'loading' }
@@ -84,10 +87,14 @@ export class VesselsPlugin implements EarthEnginePlugin {
       clearInterval(this.pollTimer)
       this.pollTimer = null
     }
+    if (this.worldOverlay) {
+      this.worldOverlay.clearCategory('vessel')
+    }
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
+    this.worldOverlay = null
     this.knownMmsi.clear()
     this.viewer = null
     this.status = { count: 0, status: 'disabled' }
@@ -134,6 +141,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
   private handleFullUpdate(features: VesselFeature[]): void {
     if (!this.dataSource) return
     this.dataSource.entities.removeAll()
+    this.worldOverlay?.clearCategory('vessel')
     this.knownMmsi.clear()
 
     for (const f of features) {
@@ -149,6 +157,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
 
     for (const mmsi of removed) {
       this.dataSource.entities.removeById(`vessel:${mmsi}`)
+      this.worldOverlay?.removeCard(`vessel:${mmsi}`)
       this.knownMmsi.delete(mmsi)
     }
 
@@ -166,6 +175,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
 
     // Color by ship type: cargo=cyan, tanker=orange, passenger=green, fishing=yellow, other=gray
     const color = this.shipTypeColor(f.shipType)
+    const colorHex = this.shipTypeColorHex(f.shipType)
 
     this.dataSource.entities.add({
       id: `vessel:${f.mmsi}`,
@@ -176,15 +186,7 @@ export class VesselsPlugin implements EarthEnginePlugin {
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.5)),
         outlineWidth: new Cesium.ConstantProperty(1),
       },
-      label: f.name ? {
-        text: f.name.trim().slice(0, 12),
-        font: '9px monospace',
-        fillColor: new Cesium.ConstantProperty(color.withAlpha(0.8)),
-        outlineColor: new Cesium.ConstantProperty(Cesium.Color.BLACK),
-        outlineWidth: new Cesium.ConstantProperty(2),
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        pixelOffset: new Cesium.Cartesian2(0, -14),
-      } : undefined,
+      // No label here — managed by WorldOverlay for collision
       properties: {
         speed: f.speed,
         heading: f.heading,
@@ -192,6 +194,22 @@ export class VesselsPlugin implements EarthEnginePlugin {
         destination: f.destination,
       },
     } as any)
+
+    // Register card through shared WorldOverlay (collision-managed)
+    if (this.worldOverlay) {
+      const name = f.name?.trim() || `MMSI ${f.mmsi}`
+      const subtitle = `${f.speed.toFixed(1)}kt • ${Math.round(f.heading)}°${f.shipType ? ` • ${f.shipType}` : ''}`
+      this.worldOverlay.registerCard({
+        id: `vessel:${f.mmsi}`,
+        lat: f.lat,
+        lon: f.lon,
+        title: name.slice(0, 20),
+        subtitle,
+        category: 'vessel',
+        priority: 5,
+        color: colorHex,
+      })
+    }
   }
 
   private shipTypeColor(shipType?: string): Cesium.Color {
@@ -202,6 +220,16 @@ export class VesselsPlugin implements EarthEnginePlugin {
     if (t.includes('passenger')) return Cesium.Color.fromBytes(74, 255, 138, 255)
     if (t.includes('fishing')) return Cesium.Color.fromBytes(255, 234, 74, 255)
     return Cesium.Color.fromBytes(138, 138, 138, 255)
+  }
+
+  private shipTypeColorHex(shipType?: string): string {
+    if (!shipType) return '#8a8a8a'
+    const t = shipType.toLowerCase()
+    if (t.includes('cargo') || t.includes('container')) return '#4ac8ff'
+    if (t.includes('tanker')) return '#ff8a4a'
+    if (t.includes('passenger')) return '#4aff8a'
+    if (t.includes('fishing')) return '#ffea4a'
+    return '#8a8a8a'
   }
 }
 
