@@ -1,17 +1,20 @@
-Add GitHub community files — CODE_OF_CONDUCT, CONTRIBUTING, SECURITY, LICENSE, issue/PR templates
+Fix README — plugin count, plugin table, Node version, build path, project structure, v0.8 status
 
-Community checklist:
-- LICENSE: main file pointing to three-layer model (VOC-L / VCE-L / VPL)
-- CODE_OF_CONDUCT.md: Contributor Covenant 1.4 adapted
-- CONTRIBUTING.md: layer-aware guide (which layer am I contributing to?)
-- SECURITY.md: vulnerability reporting, security model, best practices
-- .github/ISSUE_TEMPLATE/bug_report.yml: structured bug reports with layer selector
-- .github/ISSUE_TEMPLATE/feature_request.yml: feature requests with layer selector
-- .github/ISSUE_TEMPLATE/question.yml: support questions
-- .github/ISSUE_TEMPLATE/config.yml: blank issues disabled, Discord + security contact links
-- .github/PULL_REQUEST_TEMPLATE.md: layer checkbox, type of change, checklist
-- .github/CODEOWNERS: auto-request review for Core Engine and legal files
-- .github/FUNDING.yml: Discord support link for monetization
+Corrections:
+- Plugin count: 34 → 33 (verified against register array in plugins/index.ts)
+- Plugin table: fixed to match code's actual tier structure
+  - Tier 1: added missing "Infrastructure" (was 7, now 8)
+  - Tier 2: removed Search Zones/Rest Points/Fall Risk/Remains Corridor/Case Profiles/Hiker Profile (they're Tier 5)
+  - Tier 4: removed Predictions (it's Tier 4b)
+  - Tier 5: added all 7 plugins (was only listing Export/Import)
+- Removed "Satellites" from plugin table (it's a separate overlay, not a plugin)
+- Added note explaining satellites are a SatellitesOverlay, not a plugin
+- Node.js requirement: 18+ → 20+ (matches tech stack)
+- Build output: hardcoded E:/osint-builds/release → dist/ or ELECTRON_OUTPUT_DIR
+- Project structure: added all root-level files (LICENSE*, LICENSING.md, PRIVACY.md, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, .env.example, .github/)
+- Project structure: added license-manager.ts and PrivacyPolicyPanel.tsx
+- Status: added v0.8 section (licensing, privacy, security hardening)
+- Quick start: clone command instead of hardcoded local path
 
 Generated with [Devin](https://devin.ai)
 

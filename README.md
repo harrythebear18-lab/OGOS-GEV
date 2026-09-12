@@ -38,6 +38,11 @@ DEM analysis, and local compute — all in one unified cockpit window.
   (Nominatim geocode + Overpass footprints), detection overlay (screen-space brackets
   with 4 density modes and 4 visual themes).
 - **Offline-first** — tiles and feeds are cached locally; the app runs without a network.
+- **Privacy-first** — 4-stage security model (LOCK / AI / FULL / NET), local AI, no telemetry
+  unless enabled. See `PRIVACY.md` for the full GDPR privacy policy.
+- **License-gated Core Engine** — the cockpit is open source (VOC-L), the Core Engine
+  (HAL, WebGPU, worker pool, prediction) is proprietary (VCE-L) with a 14-day trial.
+  See `LICENSING.md` for the full three-layer model.
 
 ## Tech stack
 
@@ -53,7 +58,7 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **KML/KMZ:** `@xmldom/xmldom` + `adm-zip`
 - **AI:** Ollama (Qwen-VL) + CLIP (local FastAPI, CUDA-backed)
 - **Lightning:** Blitzortung WebSocket (character-based LZW decode, UTF-8)
-- **Build output:** `E:/osint-builds/release`
+- **Build output:** `dist/` or custom `ELECTRON_OUTPUT_DIR`
 
 ## HAL — Hardware Abstraction Layer
 
@@ -96,6 +101,22 @@ HAL probes on startup:
 | WebCodecs image decode | ImageDecoder | probed, **not called** |
 | WebCodecs video encode | VideoEncoder | probed, **not called** |
 
+## Licensing — Visentrix Three-Layer Model
+
+This project uses a three-layer licensing model. See `LICENSING.md` for the
+full explanation and file-level classification.
+
+| Layer | License | What's covered | Status |
+|-------|---------|----------------|--------|
+| 1 — Cockpit | VOC-L (open, MIT-like) | Electron shell, Cesium globe, plugin manager, UI, basic plugins, analyst, HUD, live feeds, AI console | Open source |
+| 2 — Core Engine | VCE-L (proprietary) | HAL, WebGPU kernels, worker pool, streaming I/O, prediction engine, native bridges | All rights reserved |
+| 3 — Plugins | VPL (hybrid) | Community, commercial, private, mission plugins linking to Cockpit API | Open or commercial |
+
+**License manager:** The Core Engine is gated by a machine-bound license system
+(`src/main/services/license-manager.ts`) with a 14-day trial, encrypted storage,
+HMAC tamper detection, and optional online activation. The Cockpit always works
+without a license — the Core Engine does not.
+
 ## AI services
 
 The workstation integrates local AI for scene analysis and data queries:
@@ -132,6 +153,7 @@ osint-sentinel-workstation/
 │   │       │   ├── worker-pool.ts     # worker_threads + SharedArrayBuffer
 │   │       │   ├── streaming-io.ts   # ReadableStream pipelines
 │   │       │   └── workers/           # CPU worker scripts
+│   │       ├── license-manager.ts  # machine-bound license validation (VCE-L)
 │   │       ├── system-verifier.ts     # on-demand health check
 │   │       ├── runoff-service.ts    # D8 + Priority-Flood + SCS hydrology
 │   │       ├── canopy-service.ts    # GIBS NDVI + DEM roughness canopy height
@@ -150,6 +172,7 @@ osint-sentinel-workstation/
 │           │   └── index.ts           # HAL init + capability reporting
 │           ├── WorldOverlay.ts  # shared HTML card/label layer (globe-occluded)
 │           ├── SystemVerifierPanel.tsx
+│           ├── PrivacyPolicyPanel.tsx  # in-app GDPR privacy policy
 │           ├── DrawTools.tsx
 │           ├── PluginPanel.tsx
 │           ├── InspectorPanel.tsx
@@ -159,33 +182,48 @@ osint-sentinel-workstation/
 │           │   ├── context-store.ts        # entity selection + tracking
 │           │   ├── annotation-resolver.ts   # geocode + OSM footprints
 │           │   └── detection-overlay.ts    # screen-space brackets
-│           └── plugins/    # 34 Cesium globe plugins
+│           └── plugins/    # 33 Cesium globe plugins
 ├── scripts/
 │   ├── clip_server.py     # CLIP FastAPI server
 │   └── check-ai.js        # AI status checker
 ├── native/openxr-bridge/  # future Quest 3S PC Link
+├── .github/              # issue templates, PR template, CODEOWNERS, FUNDING
+├── LICENSE               # points to three-layer model
+├── LICENSE.cockpit       # VOC-L (open source)
+├── LICENSE.core          # VCE-L (proprietary)
+├── LICENSE.plugins       # VPL (hybrid)
+├── LICENSING.md          # three-layer model explanation
+├── PRIVACY.md            # GDPR privacy policy
+├── SECURITY.md           # security policy
+├── CONTRIBUTING.md       # contribution guide
+├── CODE_OF_CONDUCT.md    # community code of conduct
+├── .env.example          # env var template (no secrets)
 ├── electron.vite.config.ts
 └── package.json
 ```
 
 ## Plugin architecture
 
-All 34 plugins follow a unified interface (`EarthEnginePlugin`):
+All 33 plugins follow a unified interface (`EarthEnginePlugin`):
 register / unregister / update / getStats / getControls / onControl.
 
 | Tier | Category | Plugins |
 |------|----------|---------|
-| 1 — World Intelligence | globe | Weather, Earthquakes, Slope, Hydrology, Water, Roads, Anomaly |
-| 2 — Movement & Behaviour | analysis | Routes, Canopy, Behavior, Search Zones, Rest Points, Fall Risk, Remains Corridor, Case Profiles, Hiker Profile |
-| 3 — Live Feeds | live | Fires, Aircraft, Vessels, Lightning, Satellites |
+| 1 — Core World Intelligence | globe | Weather, Earthquakes, Slope, Anomaly, Hydrology, Water, Roads, Infrastructure |
+| 2 — Movement & Behaviour | analysis | Routes, Canopy, Behavior |
+| 3 — Live Feeds | live | Fires, Aircraft, Vessels, Lightning |
 | 3b — Climate & Ocean | climate | Climate Stations (Buoys, Argo, Currents), Storms, Space Weather |
 | 3c — Infrastructure | infrastructure | Grid Assets, Network |
-| 4 — AI & Vision | ai | CLIP, Vision, Web Search, Detection Overlay, Predictions |
-| 5 — Mission Logic | export | Export/Import (GeoJSON/KML/KMZ) |
+| 4 — AI & Vision | ai | CLIP, Vision, Web Search, Detection Overlay |
+| 4b — Predictions | ai | Predictions |
+| 5 — Mission Logic | export | Search Zones, Rest Points, Fall Risk, Remains Corridor, Case Profiles, Export/Import, Hiker Profile |
 | — | vr | OpenXR / Quest 3S scaffold |
 
 Each plugin auto-activates on the selection bbox or LKP pin, renders Cesium entities,
 and exposes controls (toggles, sliders, buttons, displays) in the plugin panel.
+
+Note: SGP4 satellites are rendered as a separate overlay (`SatellitesOverlay`),
+not as a plugin, since they require continuous TLE-based propagation.
 
 ## Hydrology model
 
@@ -202,10 +240,11 @@ The runoff/flood analysis uses proper hydrological methods:
 
 ## Quick start
 
-Requires Node.js 18+.
+Requires Node.js 20+.
 
 ```bash
-cd E:\osint-sentinel-workstation
+git clone https://github.com/harrythebear18-lab/OGOS-GEV.git
+cd OGOS-GEV
 npm install
 npm run copy:cesium   # copy Cesium assets to public/
 npm run dev
@@ -237,6 +276,16 @@ npm run dist:portable  # portable Windows build
 ```
 
 ## Status
+
+**v0.8 — Licensing, privacy, and security hardening**
+
+- Visentrix three-layer licensing model (VOC-L / VCE-L / VPL)
+- Machine-bound license manager with 14-day trial, encrypted storage, HMAC tamper detection
+- GDPR privacy policy (`PRIVACY.md`) + in-app PrivacyPolicyPanel
+- Security policy (`SECURITY.md`) with vulnerability reporting process
+- Community files: CODE_OF_CONDUCT, CONTRIBUTING, issue templates, PR template, CODEOWNERS
+- Removed hardcoded user paths from source (clip-manager.ts now uses `%LOCALAPPDATA%`)
+- `.env.example` for all env vars (no secrets in repo)
 
 **v0.7 — HAL (Hardware Abstraction Layer)**
 
@@ -275,7 +324,7 @@ Also in v0.7:
 - Analyst engine, action runner, detection overlay, context store, annotation resolver
 - Hydrology rewritten with proper D8 + Priority-Flood + SCS Curve Number
 - Canopy rewritten with GIBS NDVI tile fetch + DEM roughness canopy height
-- All 34 plugins active with UI controls
+- All 33 plugins active with UI controls
 
 **v0.5 — Live feed hardening**
 
@@ -291,10 +340,16 @@ Also in v0.7:
 | File | Purpose |
 |------|---------|
 | `README.md` | This file — overview, stack, status |
+| `LICENSING.md` | Visentrix three-layer licensing model (VOC-L / VCE-L / VPL) with file-level classification |
+| `PRIVACY.md` | GDPR privacy policy — data collection, retention, rights, in-app security model |
+| `SECURITY.md` | Security policy — vulnerability reporting, security model, best practices |
 | `HAL.md` | Hardware Abstraction Layer — architecture, subsystems, migration status, roadmap |
 | `AUDIT.md` | Front-to-back codebase audit — every claim verified against source |
 | `BUILD_PLAN.md` | Implementation phases v0.1–v0.6 (note: stops at v0.6, doesn't cover v0.7 HAL) |
 | `MID_BUILD_REPORT.md` | Mid-build snapshot (commit `c397a0d` — stale, predates HAL) |
 | `MODULE_SURVEY.md` | Reference inventory of OGOS + GEV capabilities |
+| `CONTRIBUTING.md` | How to contribute — layer-aware guide (which layer am I contributing to?) |
+| `CODE_OF_CONDUCT.md` | Community code of conduct (Contributor Covenant 1.4) |
 
 The most current and honest docs are `HAL.md` and `AUDIT.md`.
+For licensing, see `LICENSING.md`. For privacy, see `PRIVACY.md`.
