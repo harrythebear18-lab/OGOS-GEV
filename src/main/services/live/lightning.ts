@@ -97,14 +97,25 @@ class BlitzortungFeed {
 
       this.ws.on('message', (data: Buffer) => {
         try {
+          // Blitzortung sends LZW-compressed JSON. The LZW stream starts with
+          // literal bytes (including '{' = 0x7b), so we can't detect compression
+          // by checking the first byte. Always try LZW first, fall back to plain.
           let jsonStr: string
-          // Check if data is compressed (not starting with { or [)
-          if (data.length > 0 && data[0] !== 0x7b && data[0] !== 0x5b) {
+          let strike: any
+          try {
             jsonStr = lzwDecode(data)
-          } else {
+            strike = JSON.parse(jsonStr)
+          } catch (_) {
+            // Not LZW or LZW decode failed — try plain UTF-8 JSON
             jsonStr = data.toString('utf8')
+            strike = JSON.parse(jsonStr)
           }
-          const strike = JSON.parse(jsonStr)
+
+          // Debug: log first few messages to see actual field names
+          if (this.strikes.length < 3) {
+            console.log(`[live/lightning] strike fields:`, Object.keys(strike).join(','), '— sample:', jsonStr.slice(0, 120))
+          }
+
           const lat = typeof strike.lat === 'number' ? strike.lat : parseFloat(strike.lat)
           const lon = typeof strike.lon === 'number' ? strike.lon : parseFloat(strike.lon)
           if (isNaN(lat) || isNaN(lon)) return
@@ -114,10 +125,14 @@ class BlitzortungFeed {
             id: `lightning:${ts}:${lat.toFixed(4)}:${lon.toFixed(4)}`,
             lat, lon,
             timestamp: ts,
-            polarity: strike.pol ?? 0,
-            current: strike.current ?? 0,
+            polarity: strike.polType ?? strike.pol ?? 0,
+            current: strike.current ?? strike.amp ?? 0,
           })
-        } catch { /* ignore malformed */ }
+        } catch (e) {
+          if (this.strikes.length === 0) {
+            console.warn(`[live/lightning] parse error: ${(e as Error).message}`)
+          }
+        }
       })
 
       this.ws.on('close', () => {

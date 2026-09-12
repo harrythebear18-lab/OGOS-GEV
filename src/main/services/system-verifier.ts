@@ -42,28 +42,56 @@ export interface VerifyReport {
   }
 }
 
+/** Progress event emitted during verification. */
+export interface VerifyProgress {
+  completed: number
+  total: number
+  currentCategory: string
+  lastCheck: string | null
+}
+
 /** Run all verification checks. Security stage gates network probes. */
-export async function verifySystem(securityStage: number): Promise<VerifyReport> {
+export async function verifySystem(
+  securityStage: number,
+  onProgress?: (p: VerifyProgress) => void,
+): Promise<VerifyReport> {
   const start = Date.now()
   const checks: CheckResult[] = []
 
+  // Total expected checks (used for progress bar)
+  const total = 22
+  const emit = (currentCategory: string) => {
+    onProgress?.({
+      completed: checks.length,
+      total,
+      currentCategory,
+      lastCheck: checks.length > 0 ? checks[checks.length - 1].name : null,
+    })
+  }
+
+  // Helper that pushes a check and emits progress
+  const add = (category: string, check: CheckResult) => {
+    checks.push(check)
+    emit(category)
+  }
+
   // ── Live feeds (always checked — no privacy concern, they're public APIs) ──
-  await checkLiveFeeds(checks)
+  await checkLiveFeeds(add)
 
   // ── Climate / ERDDAP ──
-  await checkClimate(checks)
+  await checkClimate(add)
 
   // ── AI services ──
-  await checkAiServices(checks)
+  await checkAiServices(add)
 
   // ── Native addons ──
-  checkNativeAddons(checks)
+  checkNativeAddons(add)
 
   // ── System health ──
-  await checkSystemHealth(checks, securityStage)
+  await checkSystemHealth(add, securityStage)
 
   // ── Privacy/security state ──
-  checkPrivacyState(checks, securityStage)
+  checkPrivacyState(add, securityStage)
 
   const summary = {
     ok: checks.filter((c) => c.status === 'ok').length,
@@ -83,7 +111,7 @@ export async function verifySystem(securityStage: number): Promise<VerifyReport>
 }
 
 // ── Live feeds ──
-async function checkLiveFeeds(checks: CheckResult[]): Promise<void> {
+async function checkLiveFeeds(add: (cat: string, c: CheckResult) => void): Promise<void> {
   // We can't directly read liveData.features (private), so we re-fetch counts
   // by calling the same getters the plugins use. This also verifies the
   // fetchers actually respond.
@@ -104,7 +132,7 @@ async function checkLiveFeeds(checks: CheckResult[]): Promise<void> {
       { name: 'Satellites (TLE)', fn: async () => (await getSatelliteFeatures()).length },
     )
   } catch (e) {
-    checks.push({ name: 'Live feeds import', category: 'live', status: 'fail', detail: `Import failed: ${(e as Error).message}` })
+    add('live', { name: 'Live feeds import', category: 'live', status: 'fail', detail: `Import failed: ${(e as Error).message}` })
     return
   }
 
@@ -115,12 +143,12 @@ async function checkLiveFeeds(checks: CheckResult[]): Promise<void> {
     })
     if (res.ok) {
       const data = (await res.json()) as { features: unknown[] }
-      checks.push({ name: 'Earthquakes (USGS)', category: 'live', status: 'ok', detail: `${data.features.length} quakes M≥2.5`, value: data.features.length })
+      add('live', { name: 'Earthquakes (USGS)', category: 'live', status: 'ok', detail: `${data.features.length} quakes M≥2.5`, value: data.features.length })
     } else {
-      checks.push({ name: 'Earthquakes (USGS)', category: 'live', status: 'warn', detail: `HTTP ${res.status}` })
+      add('live', { name: 'Earthquakes (USGS)', category: 'live', status: 'warn', detail: `HTTP ${res.status}` })
     }
   } catch (e) {
-    checks.push({ name: 'Earthquakes (USGS)', category: 'live', status: 'fail', detail: (e as Error).message })
+    add('live', { name: 'Earthquakes (USGS)', category: 'live', status: 'fail', detail: (e as Error).message })
   }
 
   // Run feed checks in parallel
@@ -135,24 +163,24 @@ async function checkLiveFeeds(checks: CheckResult[]): Promise<void> {
     if (r.status === 'fulfilled') {
       const count = r.value.count
       if (count > 0) {
-        checks.push({ name, category: 'live', status: 'ok', detail: `${count} features`, value: count })
+        add('live', { name, category: 'live', status: 'ok', detail: `${count} features`, value: count })
       } else {
-        checks.push({ name, category: 'live', status: 'warn', detail: '0 features (feed may be down or empty)' })
+        add('live', { name, category: 'live', status: 'warn', detail: '0 features (feed may be down or empty)' })
       }
     } else {
-      checks.push({ name, category: 'live', status: 'fail', detail: (r.reason as Error)?.message ?? 'unknown error' })
+      add('live', { name, category: 'live', status: 'fail', detail: (r.reason as Error)?.message ?? 'unknown error' })
     }
   }
 }
 
 // ── Climate / ERDDAP ──
-async function checkClimate(checks: CheckResult[]): Promise<void> {
+async function checkClimate(add: (cat: string, c: CheckResult) => void): Promise<void> {
   // Read from climateMonitor's cached state (no re-fetch — that's a 4-min cycle)
   const stations = climateMonitor.getStations()
   const storms = climateMonitor.getStorms()
   const spaceWeather = climateMonitor.getSpaceWeather()
 
-  checks.push({
+  add('climate', {
     name: 'Climate stations (all sources)',
     category: 'climate',
     status: stations.length > 0 ? 'ok' : 'warn',
@@ -160,7 +188,7 @@ async function checkClimate(checks: CheckResult[]): Promise<void> {
     value: stations.length,
   })
 
-  checks.push({
+  add('climate', {
     name: 'Active storms (NHC + NWS)',
     category: 'climate',
     status: storms.length > 0 ? 'ok' : 'warn',
@@ -168,7 +196,7 @@ async function checkClimate(checks: CheckResult[]): Promise<void> {
     value: storms.length,
   })
 
-  checks.push({
+  add('climate', {
     name: 'Space weather (SWPC)',
     category: 'climate',
     status: spaceWeather ? 'ok' : 'warn',
@@ -183,12 +211,12 @@ async function checkClimate(checks: CheckResult[]): Promise<void> {
       signal: AbortSignal.timeout(10000),
     })
     if (res.ok) {
-      checks.push({ name: 'ERDDAP coastwatch.pfeg.noaa.gov', category: 'climate', status: 'ok', detail: 'reachable' })
+      add('climate', { name: 'ERDDAP coastwatch.pfeg.noaa.gov', category: 'climate', status: 'ok', detail: 'reachable' })
     } else {
-      checks.push({ name: 'ERDDAP coastwatch.pfeg.noaa.gov', category: 'climate', status: 'warn', detail: `HTTP ${res.status}` })
+      add('climate', { name: 'ERDDAP coastwatch.pfeg.noaa.gov', category: 'climate', status: 'warn', detail: `HTTP ${res.status}` })
     }
   } catch (e) {
-    checks.push({
+    add('climate', {
       name: 'ERDDAP coastwatch.pfeg.noaa.gov',
       category: 'climate',
       status: 'fail',
@@ -202,12 +230,12 @@ async function checkClimate(checks: CheckResult[]): Promise<void> {
       signal: AbortSignal.timeout(10000),
     })
     if (res.ok) {
-      checks.push({ name: 'NHC storms (nhc.noaa.gov)', category: 'climate', status: 'ok', detail: 'reachable' })
+      add('climate', { name: 'NHC storms (nhc.noaa.gov)', category: 'climate', status: 'ok', detail: 'reachable' })
     } else {
-      checks.push({ name: 'NHC storms (nhc.noaa.gov)', category: 'climate', status: 'warn', detail: `HTTP ${res.status}` })
+      add('climate', { name: 'NHC storms (nhc.noaa.gov)', category: 'climate', status: 'warn', detail: `HTTP ${res.status}` })
     }
   } catch (e) {
-    checks.push({
+    add('climate', {
       name: 'NHC storms (nhc.noaa.gov)',
       category: 'climate',
       status: 'fail',
@@ -217,23 +245,23 @@ async function checkClimate(checks: CheckResult[]): Promise<void> {
 }
 
 // ── AI services ──
-async function checkAiServices(checks: CheckResult[]): Promise<void> {
+async function checkAiServices(add: (cat: string, c: CheckResult) => void): Promise<void> {
   // CLIP server
   try {
     const res = await fetch('http://localhost:9776/health', { signal: AbortSignal.timeout(5000) })
     if (res.ok) {
       const data = await res.json() as { model?: string; running?: boolean }
-      checks.push({
+      add('ai', {
         name: 'CLIP server (:9776)',
         category: 'ai',
         status: 'ok',
         detail: `online — model: ${data.model ?? 'unknown'}`,
       })
     } else {
-      checks.push({ name: 'CLIP server (:9776)', category: 'ai', status: 'warn', detail: `HTTP ${res.status}` })
+      add('ai', { name: 'CLIP server (:9776)', category: 'ai', status: 'warn', detail: `HTTP ${res.status}` })
     }
   } catch (e) {
-    checks.push({
+    add('ai', {
       name: 'CLIP server (:9776)',
       category: 'ai',
       status: 'fail',
@@ -245,7 +273,7 @@ async function checkAiServices(checks: CheckResult[]): Promise<void> {
   try {
     const health = await checkOllamaHealth()
     if (health.running) {
-      checks.push({
+      add('ai', {
         name: 'Ollama (:11434)',
         category: 'ai',
         status: 'ok',
@@ -253,19 +281,19 @@ async function checkAiServices(checks: CheckResult[]): Promise<void> {
         value: health.models.length,
       })
     } else {
-      checks.push({ name: 'Ollama (:11434)', category: 'ai', status: 'fail', detail: 'not running' })
+      add('ai', { name: 'Ollama (:11434)', category: 'ai', status: 'fail', detail: 'not running' })
     }
   } catch (e) {
-    checks.push({ name: 'Ollama (:11434)', category: 'ai', status: 'fail', detail: (e as Error).message })
+    add('ai', { name: 'Ollama (:11434)', category: 'ai', status: 'fail', detail: (e as Error).message })
   }
 }
 
 // ── Native addons ──
-function checkNativeAddons(checks: CheckResult[]): void {
+function checkNativeAddons(add: (cat: string, c: CheckResult) => void): void {
   // OpenXR bridge
   const addonPath = join(__dirname, '..', 'native', 'openxr-bridge', 'build', 'Release', 'xr-native.node')
   const addonExists = existsSync(addonPath)
-  checks.push({
+  add('native', {
     name: 'OpenXR native addon',
     category: 'native',
     status: addonExists ? 'ok' : 'warn',
@@ -274,11 +302,11 @@ function checkNativeAddons(checks: CheckResult[]): void {
 }
 
 // ── System health ──
-async function checkSystemHealth(checks: CheckResult[], securityStage: number): Promise<void> {
+async function checkSystemHealth(add: (cat: string, c: CheckResult) => void, securityStage: number): Promise<void> {
   // Memory usage (process)
   const mem = process.memoryUsage()
   const memMB = mem.rss / 1024 / 1024
-  checks.push({
+  add('system', {
     name: 'Main process memory',
     category: 'system',
     status: memMB < 1500 ? 'ok' : memMB < 3000 ? 'warn' : 'fail',
@@ -288,7 +316,7 @@ async function checkSystemHealth(checks: CheckResult[], securityStage: number): 
 
   // Uptime
   const uptimeMin = process.uptime() / 60
-  checks.push({
+  add('system', {
     name: 'Process uptime',
     category: 'system',
     status: 'ok',
@@ -298,14 +326,14 @@ async function checkSystemHealth(checks: CheckResult[], securityStage: number): 
   // Network reachability — public APIs (privacy-safe, no user info leaked)
   try {
     const res = await fetch('https://api.openstreetmap.org/', { signal: AbortSignal.timeout(8000) })
-    checks.push({
+    add('system', {
       name: 'Internet reachability',
       category: 'system',
       status: res.ok ? 'ok' : 'warn',
       detail: res.ok ? 'OSM reachable' : `HTTP ${res.status}`,
     })
   } catch (e) {
-    checks.push({ name: 'Internet reachability', category: 'system', status: 'fail', detail: (e as Error).message })
+    add('system', { name: 'Internet reachability', category: 'system', status: 'fail', detail: (e as Error).message })
   }
 
   // Stage 3 only: network diagnostics (public IP, DNS)
@@ -314,20 +342,20 @@ async function checkSystemHealth(checks: CheckResult[], securityStage: number): 
       const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(8000) })
       if (res.ok) {
         const data = await res.json() as { ip: string }
-        checks.push({
+        add('system', {
           name: 'Public IP (stage 3)',
           category: 'system',
           status: 'ok',
           detail: `${data.ip}`,
         })
       } else {
-        checks.push({ name: 'Public IP (stage 3)', category: 'system', status: 'warn', detail: `HTTP ${res.status}` })
+        add('system', { name: 'Public IP (stage 3)', category: 'system', status: 'warn', detail: `HTTP ${res.status}` })
       }
     } catch (e) {
-      checks.push({ name: 'Public IP (stage 3)', category: 'system', status: 'fail', detail: (e as Error).message })
+      add('system', { name: 'Public IP (stage 3)', category: 'system', status: 'fail', detail: (e as Error).message })
     }
   } else {
-    checks.push({
+    add('system', {
       name: 'Public IP (stage 3)',
       category: 'system',
       status: 'skip',
@@ -337,32 +365,32 @@ async function checkSystemHealth(checks: CheckResult[], securityStage: number): 
 }
 
 // ── Privacy/security state ──
-function checkPrivacyState(checks: CheckResult[], securityStage: number): void {
+function checkPrivacyState(add: (cat: string, c: CheckResult) => void, securityStage: number): void {
   const stageNames = ['LOCK (locationless)', 'AI (regional context)', 'FULL OSINT', 'NETWORK']
   const stageName = stageNames[securityStage] ?? `Stage ${securityStage}`
 
-  checks.push({
+  add('privacy', {
     name: 'Security stage',
     category: 'privacy',
     status: 'ok',
     detail: `stage ${securityStage} — ${stageName}`,
   })
 
-  checks.push({
+  add('privacy', {
     name: 'AI privacy mode',
     category: 'privacy',
     status: 'ok',
     detail: securityStage < 2 ? 'active (coordinates coarsened, locationless phrasing)' : 'disabled (exact coordinates allowed)',
   })
 
-  checks.push({
+  add('privacy', {
     name: 'Web search privacy',
     category: 'privacy',
     status: 'ok',
     detail: securityStage >= 2 ? 'enabled (full context)' : 'gated (no viewport/context sent)',
   })
 
-  checks.push({
+  add('privacy', {
     name: 'Network diagnostics',
     category: 'privacy',
     status: securityStage >= 3 ? 'ok' : 'skip',

@@ -433,10 +433,12 @@ export function registerIpcHandlers(): void {
   })
 
   /* ── System verification ── */
-  ipcMain.handle('system:verify', async (_event, args) => {
+  ipcMain.handle('system:verify', async (event, args) => {
     const { verifySystem } = await import('./services/system-verifier')
     const securityStage: number = args?.securityStage ?? 0
-    return verifySystem(securityStage)
+    return verifySystem(securityStage, (p) => {
+      event.sender.send('system:verify:progress', p)
+    })
   })
 
   /* ── Climate / Ocean ── */
