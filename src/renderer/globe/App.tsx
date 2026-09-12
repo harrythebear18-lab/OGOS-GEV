@@ -24,6 +24,7 @@ import { WorldOverlay } from './WorldOverlay'
 import WorldOverlayLayer from './WorldOverlayLayer'
 import { pluginManager } from './plugins'
 import { networkPlugin } from './plugins/network-plugin'
+import { initHalRenderer } from './hal'
 import type { PluginContext } from './plugins'
 import type { GIBSLayer, DrawMode, Selection, LngLat } from '@shared/types'
 import { selectionToBBox } from '@shared/types'
@@ -280,6 +281,8 @@ export default function App() {
           setViewer(v)
           const overlay = new WorldOverlay(v)
           setWorldOverlay(overlay)
+          // Initialize HAL — probe WebGPU, WebCodecs, WASM SIMD
+          initHalRenderer().catch((e) => console.warn('[hal] init failed:', e))
         }}
         onCameraMove={onCameraMove}
         drawMode={drawMode}

@@ -179,6 +179,11 @@ app.whenReady().then(() => {
   console.log('[main] starting CLIP server...')
   startClipServer()
   console.log('[main] CLIP server start requested')
+
+  // Initialize HAL — log hardware capabilities
+  import('./services/hal/hal-manager').then(({ halManager }) => {
+    console.log(halManager.summary())
+  })
 })
 
 app.on('window-all-closed', () => {

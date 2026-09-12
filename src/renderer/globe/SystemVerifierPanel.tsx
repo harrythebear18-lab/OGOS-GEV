@@ -8,7 +8,7 @@
  * security stage 3. Lower stages show "gated" entries.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface CheckResult {
   name: string
@@ -24,6 +24,13 @@ interface VerifyReport {
   securityStage: number
   checks: CheckResult[]
   summary: { ok: number; warn: number; fail: number; skip: number; total: number }
+}
+
+interface VerifyProgress {
+  completed: number
+  total: number
+  currentCategory: string
+  lastCheck: string | null
 }
 
 interface Props {
@@ -60,10 +67,21 @@ export default function SystemVerifierPanel({ securityLevel, onClose }: Props) {
   const [report, setReport] = useState<VerifyReport | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<VerifyProgress | null>(null)
+
+  // Subscribe to progress events during verification
+  useEffect(() => {
+    if (!running) return
+    const off = (window.api as any).on?.('system:verify:progress', (p: VerifyProgress) => {
+      setProgress(p)
+    })
+    return () => { off?.() }
+  }, [running])
 
   async function runVerify() {
     setRunning(true)
     setError(null)
+    setProgress({ completed: 0, total: 22, currentCategory: 'live', lastCheck: null })
     try {
       const result = await window.api.invoke('system:verify', { securityStage: securityLevel }) as VerifyReport
       setReport(result)
@@ -71,6 +89,7 @@ export default function SystemVerifierPanel({ securityLevel, onClose }: Props) {
       setError((e as Error).message)
     } finally {
       setRunning(false)
+      setProgress(null)
     }
   }
 

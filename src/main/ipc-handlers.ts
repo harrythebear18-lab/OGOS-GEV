@@ -441,6 +441,41 @@ export function registerIpcHandlers(): void {
     })
   })
 
+  /* ── HAL (Hardware Abstraction Layer) ── */
+  ipcMain.handle('hal:capabilities', async () => {
+    const { halManager } = await import('./services/hal/hal-manager')
+    return halManager.getCapabilities()
+  })
+
+  ipcMain.handle('hal:renderer-report', async (_event, caps) => {
+    const { halManager } = await import('./services/hal/hal-manager')
+    halManager.setRendererCapabilities(caps)
+    return true
+  })
+
+  ipcMain.handle('hal:worker-exec', async (_event, args) => {
+    const { getWorkerPool } = await import('./services/hal/worker-pool')
+    const pool = getWorkerPool()
+    return pool.exec(args.type, args.data, args.transferList)
+  })
+
+  ipcMain.handle('hal:worker-stats', async () => {
+    const { getWorkerPool } = await import('./services/hal/worker-pool')
+    return getWorkerPool().stats()
+  })
+
+  ipcMain.handle('hal:stream-to-disk', async (_event, args) => {
+    const { streamingIO } = await import('./services/hal/streaming-io')
+    return streamingIO.fetchToDisk(args.url, {
+      filePath: args.filePath,
+      timeoutMs: args.timeoutMs,
+      headers: args.headers,
+      onProgress: (downloaded, total) => {
+        broadcastToWindows('hal:stream:progress', { url: args.url, downloaded, total })
+      },
+    })
+  })
+
   /* ── Climate / Ocean ── */
   ipcMain.on(IPC.CLIMATE_SET_VIEWPORT, (_event, bounds) => {
     climateMonitor.setViewportBounds(bounds)
