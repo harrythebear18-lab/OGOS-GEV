@@ -284,7 +284,7 @@ export class WorldOverlay {
     }
 
     const cameraHeight = this.viewer.camera.positionCartographic.height
-    const maxCardDistance = 3_000_000 // cards visible within 3000km
+    const maxCardDistance = 8_000_000 // cards visible within 8000km
 
     const visible: VisibleCard[] = []
     const scratchCartesian = new Cesium.Cartesian2()

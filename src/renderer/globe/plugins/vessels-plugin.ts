@@ -73,6 +73,17 @@ export class VesselsPlugin implements EarthEnginePlugin {
     const off = (ctx.ipc as any).on?.('vessel:update', handler)
     this.unsubscribe = off ? () => off() : null
 
+    // Request initial vessel data immediately (don't wait for next poll)
+    try {
+      const features = await ctx.ipc.invoke('live:vessels', {}) as LiveFeature[] | null
+      if (features && features.length > 0) {
+        const vessels = features.map(toVesselFeature).filter((f): f is VesselFeature => f !== null)
+        this.handleFullUpdate(vessels)
+      }
+    } catch (err) {
+      console.warn('[vessels] initial fetch failed:', err)
+    }
+
     if (!this.unsubscribe) {
       this.startPolling()
     }

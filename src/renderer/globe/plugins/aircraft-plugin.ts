@@ -81,6 +81,17 @@ export class AircraftPlugin implements EarthEnginePlugin {
     const off = (ctx.ipc as any).on?.('aircraft:update', handler)
     this.unsubscribe = off ? () => off() : null
 
+    // Request initial aircraft data immediately (don't wait for next poll)
+    try {
+      const features = await ctx.ipc.invoke('live:aircraft', {}) as LiveFeature[] | null
+      if (features && features.length > 0) {
+        const aircraft = features.map(toAircraftFeature).filter((f): f is AircraftFeature => f !== null)
+        this.handleFullUpdate(aircraft)
+      }
+    } catch (err) {
+      console.warn('[aircraft] initial fetch failed:', err)
+    }
+
     if (!this.unsubscribe) {
       this.startPolling()
     }

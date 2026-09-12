@@ -73,6 +73,17 @@ export class FiresPlugin implements EarthEnginePlugin {
     const off = (ctx.ipc as any).on?.('fire:update', handler)
     this.unsubscribe = off ? () => off() : null
 
+    // Request initial fire data immediately (don't wait for next 5-min poll)
+    try {
+      const features = await ctx.ipc.invoke('live:fires') as LiveFeature[] | null
+      if (features && features.length > 0) {
+        const fires = features.map(toFireFeature).filter((f): f is FireFeature => f !== null)
+        this.handleFullUpdate(fires)
+      }
+    } catch (err) {
+      console.warn('[fires] initial fetch failed:', err)
+    }
+
     if (!this.unsubscribe) {
       this.startPolling()
     }
