@@ -158,6 +158,7 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.6)),
         outlineWidth: new Cesium.ConstantProperty(1),
+        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       properties: {
         mag: f.mag,

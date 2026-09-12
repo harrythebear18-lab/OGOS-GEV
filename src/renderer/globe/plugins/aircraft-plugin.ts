@@ -227,6 +227,7 @@ export class AircraftPlugin implements EarthEnginePlugin {
           color: Cesium.Color.fromBytes(255, 234, 74, 255),
           outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
           outlineWidth: 1,
+          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
         },
         // No label here — managed by WorldOverlay for collision
         properties: {

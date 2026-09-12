@@ -186,6 +186,7 @@ export class LightningPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.8)),
         outlineWidth: new Cesium.ConstantProperty(1),
+        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       properties: {
         time: s.time,

@@ -171,6 +171,7 @@ export class StormsPlugin implements EarthEnginePlugin {
           color,
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
+          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
         },
         // No label here — managed by WorldOverlay for collision
         properties: {
