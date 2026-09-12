@@ -130,7 +130,6 @@ export class WorldOverlay {
         pixelOffset: new Cesium.Cartesian2(0, label.pixelOffsetY ?? -14),
         showBackground: false,
         distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 5_000_000),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     })
 
@@ -288,6 +287,9 @@ export class WorldOverlay {
 
     const visible: VisibleCard[] = []
     const scratchCartesian = new Cesium.Cartesian2()
+    const scratchCardPos = new Cesium.Cartesian3()
+    const scratchToCamera = new Cesium.Cartesian3()
+    const cameraPos = this.viewer.camera.positionWC
 
     // Sort by priority
     const sorted = Array.from(this.cards.values())
@@ -297,7 +299,16 @@ export class WorldOverlay {
     for (const card of sorted) {
       if (cameraHeight > maxCardDistance) continue
 
-      const pos = Cesium.Cartesian3.fromDegrees(card.lon, card.lat, card.height ?? 0)
+      const pos = Cesium.Cartesian3.fromDegrees(card.lon, card.lat, card.height ?? 0, Cesium.Ellipsoid.WGS84, scratchCardPos)
+
+      // Globe occlusion test: is this position on the far side of the globe?
+      // Surface normal at position ≈ normalized position (for a sphere).
+      // If dot(camera - position, normal) < 0, the point faces away from camera
+      // and is occluded by the globe.
+      Cesium.Cartesian3.subtract(cameraPos, pos, scratchToCamera)
+      const dot = Cesium.Cartesian3.dot(scratchToCamera, pos)
+      if (dot < 0) continue  // behind the globe — skip
+
       const screenPos = Cesium.SceneTransforms.worldToWindowCoordinates(this.viewer.scene, pos, scratchCartesian)
 
       if (!screenPos || !isFinite(screenPos.x) || !isFinite(screenPos.y)) continue
