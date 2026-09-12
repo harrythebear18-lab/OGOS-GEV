@@ -82,7 +82,7 @@ export class ErddapFetcher {
 
     try {
       const vars =
-        'station,longitude,latitude,time,wd,wspd,gst,wvht,dpd,apd,bar,atmp,wtmp,dewp,vis,ptdy,tide,wspu,wspv'
+        'station,longitude,latitude,time,WD,WSPD,GST,WVHT,DPD,APD,BAR,ATMP,WTMP,DEWP,VIS,PTDY,TIDE,WSPU,WSPV'
       const url = `${ERDDAP_BASE}/cwwcNDBCMet.json?${vars}&time%3E=now-2hours&orderBy(%22station,time%22)`
       console.log('[climate/erddap] NDBC fetching:', url)
       const data = await fetchErddapJson(url, 30000)
@@ -117,13 +117,13 @@ export class ErddapFetcher {
         measurements[id] = {
           stationId: id,
           timestamp: ts,
-          waterTemp: safeNum(get(row, 'wtmp')),
-          airTemp: safeNum(get(row, 'atmp')),
-          windSpeed: safeNum(get(row, 'wspd')),
-          windDir: safeNum(get(row, 'wd')),
-          waveHeight: safeNum(get(row, 'wvht')),
-          wavePeriod: safeNum(get(row, 'dpd')),
-          pressure: safeNum(get(row, 'bar')),
+          waterTemp: safeNum(get(row, 'WTMP')),
+          airTemp: safeNum(get(row, 'ATMP')),
+          windSpeed: safeNum(get(row, 'WSPD')),
+          windDir: safeNum(get(row, 'WD')),
+          waveHeight: safeNum(get(row, 'WVHT')),
+          wavePeriod: safeNum(get(row, 'DPD')),
+          pressure: safeNum(get(row, 'BAR')),
         }
       }
       console.log(`[climate/erddap] NDBC: ${stations.length} stations, ${Object.keys(measurements).length} measurements`)
