@@ -72,7 +72,6 @@ pluginManager.register([
   detectionPlugin,
   // Tier 4b — Predictions (ported from OGOS)
   predictionsPlugin,
-  detectionPlugin,
   // Tier 5 — Mission Logic
   searchZonesPlugin,
   restPointsPlugin,

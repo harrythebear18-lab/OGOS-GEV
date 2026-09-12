@@ -2,7 +2,7 @@
  * Lightning feed — Blitzortung real-time lightning detections.
  * Uses Blitzortung WebSocket (same approach as OSINT-Global-OS).
  *
- * WebSocket: wss://ws1.blitzortung.org:3000/ through wss://ws8.blitzortung.org:3000/
+ * WebSocket: wss://ws1.blitzortung.org/ through wss://ws8.blitzortung.org/
  * The WebSocket delivers strikes in real-time. We accumulate them and serve on poll.
  *
  * Messages may be LZW-compressed (binary) or plain JSON.
