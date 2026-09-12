@@ -13,10 +13,13 @@ import { WebSocket } from 'ws'
 
 const WS_SERVERS = [
   'wss://ws1.blitzortung.org/',
+  'wss://ws2.blitzortung.org/',
+  'wss://ws3.blitzortung.org/',
+  'wss://ws4.blitzortung.org/',
+  'wss://ws5.blitzortung.org/',
+  'wss://ws6.blitzortung.org/',
   'wss://ws7.blitzortung.org/',
   'wss://ws8.blitzortung.org/',
-  'wss://live.lightningmaps.org/',
-  'wss://live2.lightningmaps.org/',
 ]
 
 const STRIKE_LIFETIME = 30 * 60 * 1000  // 30 minutes
@@ -90,8 +93,8 @@ class BlitzortungFeed {
         this.connected = true
         this.reconnectDelay = 5000
         this.errorLogged = false
-        // Subscribe to all strikes (Blitzortung protocol v2)
-        this.ws?.send(JSON.stringify({ a: 418 }))
+        // Subscribe to all strikes (Blitzortung protocol)
+        this.ws?.send(JSON.stringify({ a: 111 }))
         console.log(`[live/lightning] WebSocket connected to ${url}`)
       })
 
@@ -189,34 +192,31 @@ export async function getLightningFeatures(): Promise<LiveFeature[]> {
 }
 
 // ── LZW Decoder for Blitzortung compressed messages ──
-// Blitzortung uses a character-based LZW: each UTF-8 character IS a code.
-// Code points < 256 are literals; code points >= 256 are dictionary refs.
-// Based on the reference implementation from blitzortung.org's map viewer.
+// Blitzortung uses a character-based LZW where each UTF-8 character IS a code.
+// Code points < 256 are literals (the char at current position); code points
+// >= 256 (from multi-byte UTF-8 sequences) are dictionary refs (code - 256).
+// CRITICAL: must use 'utf8' NOT 'binary' — multi-byte UTF-8 sequences produce
+// the code points >= 256 that form the dictionary. Binary mode corrupts them.
+// Reference: blitzortung.org map viewer JS + docs.rs/blitzortung live.rs
 function lzwDecode(data: Buffer): string {
-  const d = data.toString('utf8').split('')
-  if (d.length === 0) return ''
-  let c = d[0]
-  let f = c
-  const g: string[] = [c]
-  const e: Record<number, string> = {}  // dictionary
-  let o = 256  // next dictionary code
-
-  for (let i = 1; i < d.length; i++) {
-    const code = d[i].charCodeAt(0)
-    let a: string
+  const str = data.toString('utf8')
+  if (str.length === 0) return ''
+  let c = str[0]
+  let prev = c
+  let out = c
+  const dict: string[] = []  // indexed 0..N, code = dict_index + 256
+  for (let i = 1; i < str.length; i++) {
+    const code = str.charCodeAt(i)
+    let val: string
     if (code < 256) {
-      a = d[i]
-    } else if (e[code]) {
-      a = e[code]
+      val = str[i]                       // literal: the char at current position
     } else {
-      a = f + c
+      val = dict[code - 256] ?? (prev + c)  // dictionary ref
     }
-    g.push(a)
-    c = a.charAt(0)
-    e[o] = f + c
-    o++
-    f = a
+    out += val
+    c = val[0]
+    dict.push(prev + c)                  // add new dict entry
+    prev = val
   }
-
-  return g.join('')
+  return out
 }
