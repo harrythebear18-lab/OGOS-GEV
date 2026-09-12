@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discord Support
+    url: https://discord.gg/visentrix
+    about: For quick questions and community support, join our Discord server
+  - name: Security Vulnerability
+    url: https://discord.gg/visentrix
+    about: Do NOT report security vulnerabilities via issues. DM a maintainer on Discord

@@ -1,0 +1,89 @@
+name: Bug Report
+description: Report something that's not working correctly
+title: "[BUG] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Open the app
+        2. Click on X
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Console Output
+      description: Any relevant log output or console errors
+      render: shell
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "Windows 11 23H2, macOS 14.5, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js Version
+      placeholder: "20.11.0"
+  - type: input
+    id: version
+    attributes:
+      label: App Version / Commit
+      placeholder: "v0.1.0 or commit hash"
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer is affected?
+      options:
+        - Cockpit (Layer 1 — UI, globe, plugins, feeds)
+        - Core Engine (Layer 2 — HAL, compute, prediction)
+        - Plugin (Layer 3)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, attach screenshots
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

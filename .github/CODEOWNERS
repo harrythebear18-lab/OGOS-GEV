@@ -1,0 +1,21 @@
+# Codeowners for the OSINT Sentinel Workstation
+# PRs in these areas will auto-request review from the right people
+
+# Default owner
+* @harrythebear18-lab
+
+# Core Engine (Layer 2 — proprietary)
+/src/main/services/hal/          @harrythebear18-lab
+/src/renderer/globe/hal/         @harrythebear18-lab
+/src/main/services/slope-service.ts   @harrythebear18-lab
+/src/main/services/runoff-service.ts  @harrythebear18-lab
+/src/main/services/anomaly-service.ts @harrythebear18-lab
+/src/main/services/license-manager.ts @harrythebear18-lab
+/src/main/services/climate/      @harrythebear18-lab
+/native/                         @harrythebear18-lab
+
+# Licensing and legal
+/LICENSE*                        @harrythebear18-lab
+/LICENSING.md                    @harrythebear18-lab
+/SECURITY.md                     @harrythebear18-lab
+/PRIVACY.md                      @harrythebear18-lab

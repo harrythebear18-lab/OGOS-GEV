@@ -1,0 +1,25 @@
+Visentrix Three-Layer License
+==============================
+
+This project uses a three-layer licensing model. See LICENSING.md for the
+full explanation and file-level classification.
+
+Layer 1 — Visentrix Open Cockpit License (VOC-L)
+  Open source (MIT-like). Covers the Electron shell, Cesium globe,
+  plugin manager, UI panels, and basic plugins.
+  See LICENSE.cockpit for full text.
+
+Layer 2 — Visentrix Core Engine License (VCE-L)
+  Proprietary (all rights reserved). Covers HAL, WebGPU kernels, worker
+  pool, streaming I/O, prediction engine, and native bridges.
+  See LICENSE.core for full text.
+
+Layer 3 — Visentrix Plugin License (VPL)
+  Hybrid. Covers community, commercial, private, and mission plugins
+  that link to the Cockpit layer (Layer 1) public API.
+  See LICENSE.plugins for full text.
+
+For questions about licensing, see LICENSING.md or contact us via the
+Discord server: https://discord.gg/visentrix
+
+Copyright (c) 2026 Visentrix. All rights reserved.
