@@ -371,8 +371,13 @@ detection
 | App launches (`npm run dev`) | ✅ clean start |
 | React renderer | ✅ no crashes |
 | Preload unsubscribe | ✅ no `unsub is not a function` |
-| Privacy mode | ✅ ON by default, two-step confirm, map entities hidden |
+| Security model (4-stage) | ✅ LOCK/AI/FULL/NET, randomized confirm words, stage-aware colors |
+| Privacy mode | ✅ Stage 0 default, stage-aware warnings, map entities hidden |
 | AI mode toggle | ✅ Active SAR / Legacy Research, mode-aware prompt |
+| AI security coarsening | ✅ Stage 0: ~1° / Stage 1: ~0.1° / Stage 2+: exact |
+| Web search coarsening | ✅ Stage 0-1 coarsened, Stage 2+ exact, reverse geocode gated |
+| World overlay | ✅ shared label/card layer, collision management |
+| Plugin card publishing | ✅ aircraft, vessels, fires, earthquakes via WorldOverlay |
 | Climate integrity hydration | ✅ requests current on mount |
 | Live feeds polling | ✅ all 6 feeds active |
 | Grid monitor | ✅ 157 assets, 50 alerts |
@@ -381,3 +386,156 @@ detection
 | Aircraft track history | ✅ 30-point trails per ICAO24, 30-min TTL |
 | HUD | ✅ MGRS, GSD, NIIRS, classification banners |
 | ERDDAP | ⚠️ Argo works, NDBC/TAO/GTSPP timing out (external) |
+
+---
+
+## 13. Four-Stage Security Model
+
+Replaces the previous boolean `privacyMode` with a numeric `securityLevel` (0-3).
+Network data is the most sensitive tier — it reveals local/home connections and
+I/O from all public endpoints — so it unlocks last.
+
+| Stage | Label | Color | What's unlocked | What stays hidden |
+|-------|-------|-------|-----------------|-------------------|
+| 0 | LOCK | Green | Coarse AI region (~1°/~111km) | Everything else |
+| 1 | AI | Green | Finer AI region (~0.1°/~11km) | Network, exact coords, identity |
+| 2 | FULL | Orange | Exact coords, reverse geocode, full OSINT | Network, identity |
+| 3 | NET | Red | IP, ISP, DNS, GeoIP, arcs, user node | Nothing |
+
+### Confirmation flow
+
+Each advance requires:
+1. **Randomized confirmation word** — prevents muscle-memory doxing.
+   - Stages 1-2: ENABLE, GRANT, APPROVE, ACCEPT, AFFIRM, CONFIRM, LIFT
+   - Stage 3 (network): BREAK SEAL, ESCALATE, ELEVATE, OPEN GATE, I INTEND, I ACCEPT RISK, I'M CERTAIN
+2. **Final warning dialog** — stage-aware:
+   - Green (stages 0-1): "No personal data is exposed at this stage."
+   - Orange (stage 2): "Exact coordinates are revealed to the AI."
+   - Red (stage 3): "This will expose your personal data."
+
+Locking back down (any stage → 0) is immediate — no confirmation needed.
+
+### AI phrasing rules (stages 0-2)
+
+The AI must never imply the user is at the viewport location:
+- Forbidden: "your location", "you are near", "from your position"
+- Required: "the selected region", "the analysis area", "this region"
+- If asked "where am I" → respond that privacy mode is on
+
+### Coarsening precision
+
+| Stage | Coords precision | Reverse geocode | Web search | Network data |
+|-------|-----------------|-----------------|------------|--------------|
+| 0 | ~1° (~111km) | ❌ | Coarse | ❌ |
+| 1 | ~0.1° (~11km) | ❌ | Coarse | ❌ |
+| 2 | Exact | ✅ | Exact | ❌ |
+| 3 | Exact | ✅ | Exact | ✅ |
+
+### Data flow
+
+```
+SecurityToggle → App.tsx → AiPanel → ai.chat({securityLevel})
+  → IPC → chatWithTools({securityLevel})
+  → system prompt + context coarsening + web search coarsening
+```
+
+---
+
+## 14. World Overlay — Shared Label/Card Layer
+
+A shared canvas for labels and cards across all plugins. Replaces per-plugin
+label management with a single collision-aware layer.
+
+### Architecture
+
+- **WorldOverlay** (`src/renderer/globe/WorldOverlay.ts`) — Cesium
+  `CustomDataSource` that manages label entities + card registration.
+- **WorldOverlayLayer** (`src/renderer/globe/WorldOverlayLayer.tsx`) — React
+  component renders HTML cards positioned via
+  `Cesium.SceneTransforms.worldToWindowCoordinates`.
+
+### Features
+
+- **Collision management** — labels sorted by priority, 60px minimum distance,
+  overlapping labels hidden when zoomed in (< 2000km).
+- **Distance culling** — labels visible within 5000km, cards within 3000km.
+- **Category filtering** — `setCategoryVisible('aircraft', false)` hides all
+  aircraft labels/cards.
+- **Caps** — 200 labels, 50 cards (evicts lowest priority when full).
+- **postRender listener** — updates visibility on every camera move.
+
+### Plugins wired through WorldOverlay
+
+| Plugin | Cards shown | Priority | Color | Category |
+|--------|-------------|----------|-------|----------|
+| Aircraft (ADS-B) | All aircraft | 7 | Yellow | `aircraft` |
+| Vessels (AIS) | All vessels | 5 | By ship type | `vessel` |
+| Fires (FIRMS) | FRP > 50 MW only | Scales with FRP | Red | `fire` |
+| Earthquakes (USGS) | M >= 4.0 only | Scales with mag | By magnitude | `earthquake` |
+
+`PluginContext` now includes an optional `worldOverlay` field. App.tsx creates
+the `WorldOverlay` when the viewer is ready and passes it to the plugin context.
+
+---
+
+## 15. Future Work — Multi-Node / Multi-User Sessions
+
+**Status:** Not started. Noted for future architecture planning.
+
+The current workstation is single-operator. Multi-user / multi-PC sessions would
+turn it from a personal workstation into a collaborative operator console —
+shared OSINT platform, shared geospatial console, shared mission control.
+
+### Why it's deferred
+
+Multi-node introduces coordination complexity that doesn't exist in a
+single-operator app:
+- State sync, conflict resolution, latency tolerance
+- Identity / auth / permissions / session ownership
+- Distributed consistency, reconnection logic, partial failures
+- Version mismatches, data races, concurrency, message ordering
+
+### Recommended approach: bi-way relay server
+
+The server is **not** the source of truth — it's a dumb relay (traffic
+controller). Clients own their state and send deltas; the server broadcasts
+deltas to all connected clients. This is the pattern used by Yjs, Automerge,
+and Unreal's replicated multiplayer.
+
+```
+Client A → delta → Server → broadcast → Client B, C, D
+Client B → delta → Server → broadcast → Client A, C, D
+```
+
+No heavy server logic. No global state. No authoritative server. No locking.
+Just signal flow.
+
+### Why the current architecture is a good foundation
+
+The workstation already has:
+- Async pipelines and modular subsystems
+- Event-driven plugin architecture
+- Transform-based rendering (Cesium entities, scene context)
+- Signal-based live data feeds (push/delta updates)
+- Clean separation between main process and renderer
+
+These are the ingredients needed for delta-based sync — but they are **not**
+70% of the implementation. The missing pieces are:
+- A transport layer (WebSocket relay, message framing, reconnect)
+- A delta/diff protocol (what gets synced: camera, selection, layers, draws)
+- Session identity (session IDs, operator IDs, auth)
+- Conflict resolution rules (last-write-wins, operator priority, merge)
+- State recovery handshake (late-join sync, reconnection)
+
+### Suggested first proof-of-concept
+
+1. Define a delta protocol — what gets synced (camera, selection, layer toggles,
+   drawn shapes, AI chat).
+2. Build a tiny WebSocket relay (~50 lines of Node, no state, just broadcast).
+3. Two clients, one shared camera + one shared selection — prove the diff
+   model works.
+4. Expand to layers, plugins, analysis context.
+
+Ship the single-operator version polished first. The architecture will accept
+the relay layer later without rewriting.
+
