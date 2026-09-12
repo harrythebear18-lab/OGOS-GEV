@@ -90,8 +90,8 @@ class BlitzortungFeed {
         this.connected = true
         this.reconnectDelay = 5000
         this.errorLogged = false
-        // Subscribe to all strikes
-        this.ws?.send(JSON.stringify({ a: 111 }))
+        // Subscribe to all strikes (Blitzortung protocol v2)
+        this.ws?.send(JSON.stringify({ a: 418 }))
         console.log(`[live/lightning] WebSocket connected to ${url}`)
       })
 
@@ -189,64 +189,34 @@ export async function getLightningFeatures(): Promise<LiveFeature[]> {
 }
 
 // ── LZW Decoder for Blitzortung compressed messages ──
-// Blitzortung uses LZW compression for some WebSocket messages
+// Blitzortung uses a character-based LZW: each UTF-8 character IS a code.
+// Code points < 256 are literals; code points >= 256 are dictionary refs.
+// Based on the reference implementation from blitzortung.org's map viewer.
 function lzwDecode(data: Buffer): string {
-  const dict: number[][] = []
-  for (let i = 0; i < 256; i++) {
-    dict.push([i])
-  }
+  const d = data.toString('utf8').split('')
+  if (d.length === 0) return ''
+  let c = d[0]
+  let f = c
+  const g: string[] = [c]
+  const e: Record<number, string> = {}  // dictionary
+  let o = 256  // next dictionary code
 
-  const result: number[] = []
-  let dictSize = 256
-  let bits = 8
-  let pos = 0
-
-  // Read variable-length codes
-  const readBits = (n: number): number => {
-    let val = 0
-    for (let i = 0; i < n; i++) {
-      const byteIdx = Math.floor(pos / 8)
-      const bitIdx = pos % 8
-      if (byteIdx >= data.length) return -1
-      val = (val << 1) | ((data[byteIdx] >> (7 - bitIdx)) & 1)
-      pos++
-    }
-    return val
-  }
-
-  let prev: number[] | null = null
-  while (true) {
-    const code = readBits(bits)
-    if (code === -1) break
-    if (code === 256) {
-      // Reset
-      dict.length = 256
-      for (let i = 0; i < 256; i++) dict[i] = [i]
-      dictSize = 256
-      bits = 8
-      prev = null
-      continue
-    }
-
-    let entry: number[]
-    if (code < dict.length) {
-      entry = dict[code]
-    } else if (prev !== null) {
-      entry = [...prev, prev[0]]
+  for (let i = 1; i < d.length; i++) {
+    const code = d[i].charCodeAt(0)
+    let a: string
+    if (code < 256) {
+      a = d[i]
+    } else if (e[code]) {
+      a = e[code]
     } else {
-      break
+      a = f + c
     }
-
-    result.push(...entry)
-    if (prev !== null && dictSize < 4096) {
-      dict.push([...prev, entry[0]])
-      dictSize++
-      if (dictSize >= (1 << bits) && bits < 12) {
-        bits++
-      }
-    }
-    prev = entry
+    g.push(a)
+    c = a.charAt(0)
+    e[o] = f + c
+    o++
+    f = a
   }
 
-  return Buffer.from(result).toString('utf8')
+  return g.join('')
 }
