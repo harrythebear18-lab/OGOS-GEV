@@ -45,10 +45,10 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **Build:** electron-vite + Vite 5
 - **UI:** React 18 + TypeScript
 - **3D globe:** CesiumJS
-- **GPU compute:** WebGPU (WGSL compute shaders — DEM slope/hillshade, NDVI/NDWI/NBR, anomaly detection)
-- **Hardware codecs:** WebCodecs (ImageDecoder, VideoEncoder/Decoder — NVENC/QuickSync)
-- **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool for DEM analysis, prediction)
-- **Streaming I/O:** ReadableStream pipelines with backpressure (replaces arrayBuffer bloat)
+- **GPU compute:** WebGPU (7 WGSL compute kernels compiled — not yet wired to production)
+- **Hardware codecs:** WebCodecs (ImageDecoder, VideoEncoder/Decoder probed — not yet wired to production)
+- **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool — wired to DEM slope/runoff/anomaly)
+- **Streaming I/O:** ReadableStream pipelines with backpressure (wired to DEM/canopy/tile fetches)
 - **SGP4 / orbital math:** `satellite.js`
 - **KML/KMZ:** `@xmldom/xmldom` + `adm-zip`
 - **AI:** Ollama (Qwen-VL) + CLIP (local FastAPI, CUDA-backed)
@@ -57,16 +57,17 @@ DEM analysis, and local compute — all in one unified cockpit window.
 
 ## HAL — Hardware Abstraction Layer
 
-The workstation probes and uses real hardware capabilities instead of
-JavaScript busywork:
+The workstation probes real hardware capabilities and migrates production
+workloads to use them. Status is honest — see `HAL.md` and `AUDIT.md` for
+the full picture.
 
 | Subsystem | What it touches | Status |
 |-----------|----------------|--------|
-| WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | active |
-| Worker threads | OS threads via worker_threads + SharedArrayBuffer | active |
-| Streaming I/O | ReadableStream backpressure, zero-copy SAB transfer | active |
-| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | active |
-| WASM SIMD | 128-bit CPU vector units | probed (not yet used) |
+| WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | compiled, **not wired to production** |
+| Worker threads | OS threads via worker_threads + SharedArrayBuffer | **wired** (slope, runoff, anomaly) |
+| Streaming I/O | ReadableStream backpressure | **wired** (DEM, canopy, tile cache) |
+| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | probed, **not wired to production** |
+| WASM SIMD | 128-bit CPU vector units | probed, **no module built** |
 | CUDA native | NVIDIA GPU compute (heavy workloads) | deferred |
 | OpenXR native | Meta Quest 3S PC Link | scaffold (unbuilt) |
 
@@ -78,6 +79,22 @@ HAL probes on startup:
 [hal/gpu-compute] WebGPU device: nvidia
 [hal/gpu-compute] compiled 7 compute kernels
 ```
+
+### What's actually using hardware
+
+| Workload | Backend | Verified |
+|----------|---------|----------|
+| DEM slope (Horn's method) | worker pool (`dem-slope.worker.js`) | ✅ wired |
+| Priority-Flood depression filling | worker pool (`priority-flood.worker.js`) | ✅ wired |
+| Anomaly box-blur + residuals | worker pool (`anomaly-blur.worker.js`) | ✅ wired |
+| DEM tile PNG fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
+| Canopy GIBS NDVI fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
+| Tile cache fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
+| DEM hillshade | worker (`dem-hillshade.worker.js`) | built, **not dispatched** |
+| WebGPU band math (NDVI/NDWI/NBR) | WebGPU kernels | compiled, **not called** |
+| WebGPU anomaly detection | WebGPU kernel | compiled, **not called** |
+| WebCodecs image decode | ImageDecoder | probed, **not called** |
+| WebCodecs video encode | VideoEncoder | probed, **not called** |
 
 ## AI services
 
@@ -142,7 +159,7 @@ osint-sentinel-workstation/
 │           │   ├── context-store.ts        # entity selection + tracking
 │           │   ├── annotation-resolver.ts   # geocode + OSM footprints
 │           │   └── detection-overlay.ts    # screen-space brackets
-│           └── plugins/    # 32 Cesium globe plugins
+│           └── plugins/    # 34 Cesium globe plugins
 ├── scripts/
 │   ├── clip_server.py     # CLIP FastAPI server
 │   └── check-ai.js        # AI status checker
@@ -153,7 +170,7 @@ osint-sentinel-workstation/
 
 ## Plugin architecture
 
-All 32 plugins follow a unified interface (`EarthEnginePlugin`):
+All 34 plugins follow a unified interface (`EarthEnginePlugin`):
 register / unregister / update / getStats / getControls / onControl.
 
 | Tier | Category | Plugins |
@@ -221,17 +238,63 @@ npm run dist:portable  # portable Windows build
 
 ## Status
 
-v0.7 — HAL (Hardware Abstraction Layer): WebGPU compute shaders (7 WGSL kernels
-for DEM slope/hillshade, NDVI/NDWI/NBR, anomaly detection), worker_threads +
-SharedArrayBuffer pool, streaming I/O with backpressure, WebCodecs hardware
-codecs. System Verifier (on-demand health check, privacy-aware). Blitzortung
-lightning fixed (UTF-8 character-based LZW decode). Globe occlusion fixed
-(WorldOverlay cards + plugin entities no longer show through the globe).
+**v0.7 — HAL (Hardware Abstraction Layer)**
 
-v0.6 — GEV AI architecture ported (analyst engine, action runner, detection overlay,
-context store, annotation resolver). Hydrology rewritten with proper D8 + Priority-Flood
-+ SCS Curve Number. Canopy rewritten with GIBS NDVI tile fetch + DEM roughness canopy
-height. All 32 plugins active with UI controls.
+HAL scaffolding complete — all 5 services (WebGPU, worker pool, streaming I/O,
+WebCodecs, WASM SIMD probe) initialize and probe successfully on startup.
 
-See `BUILD_PLAN.md` for implementation phases and `MODULE_SURVEY.md` for the full
-capability matrix.
+Production workloads migrated to CPU hardware:
+- DEM slope → worker pool (OS thread, not main event loop)
+- Priority-Flood depression filling → worker pool
+- Anomaly box-blur + residuals → worker pool
+- DEM tile fetches → streaming I/O (backpressure-aware)
+- Canopy GIBS fetches → streaming I/O
+- Tile cache fetches → streaming I/O
+
+Compiled but **not yet wired to production**:
+- 7 WebGPU compute kernels (DEM slope/hillshade, NDVI/NDWI/NBR, anomaly, color-transform)
+- WebCodecs ImageDecoder / VideoEncoder / VideoDecoder
+- Hillshade worker (built, not dispatched)
+
+Not yet built:
+- WASM SIMD module (probed only)
+- CUDA native addon (deferred)
+- OpenXR native addon (scaffold exists, build needs Visual Studio C++)
+
+Also in v0.7:
+- System Verifier (on-demand health check, privacy-aware)
+- Blitzortung lightning fixed (UTF-8 character-based LZW decode)
+- Globe occlusion fixed (WorldOverlay cards + plugin entities no longer show through the globe)
+- Aircraft finite depth-test (200km — visible at altitude, occluded by globe)
+- RainViewer CORS handler
+- ERDDAP/NHC retry with exponential backoff
+- Duplicate `detectionPlugin` registration fixed
+
+**v0.6 — GEV AI architecture + hydrology rewrite**
+
+- Analyst engine, action runner, detection overlay, context store, annotation resolver
+- Hydrology rewritten with proper D8 + Priority-Flood + SCS Curve Number
+- Canopy rewritten with GIBS NDVI tile fetch + DEM roughness canopy height
+- All 34 plugins active with UI controls
+
+**v0.5 — Live feed hardening**
+
+- All Tier 3 feeds polling (aircraft, fires, vessels, lightning, earthquakes, satellites)
+- Per-feed broadcast channels, plugin converters, pull-based IPC fallbacks
+
+**v0.1–v0.4 — Core + cockpit**
+
+- Cesium globe, tile cache, scene context, plugin architecture, cockpit windowing
+
+## Documentation
+
+| File | Purpose |
+|------|---------|
+| `README.md` | This file — overview, stack, status |
+| `HAL.md` | Hardware Abstraction Layer — architecture, subsystems, migration status, roadmap |
+| `AUDIT.md` | Front-to-back codebase audit — every claim verified against source |
+| `BUILD_PLAN.md` | Implementation phases v0.1–v0.6 (note: stops at v0.6, doesn't cover v0.7 HAL) |
+| `MID_BUILD_REPORT.md` | Mid-build snapshot (commit `c397a0d` — stale, predates HAL) |
+| `MODULE_SURVEY.md` | Reference inventory of OGOS + GEV capabilities |
+
+The most current and honest docs are `HAL.md` and `AUDIT.md`.
