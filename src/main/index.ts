@@ -144,6 +144,26 @@ console.log('[main] GPU flags set — rasterization, zero-copy (Vulkan/WebGPU di
 
 app.whenReady().then(() => {
   console.log('[main] app.whenReady() fired')
+
+  // ── CORS FIX: Inject Access-Control-Allow-Origin for tile servers ──
+  // RainViewer and some other tile servers don't send CORS headers, causing
+  // Chromium to block imagery requests. Inject the header into responses.
+  const { session } = require('electron')
+  session.defaultSession.webRequest.onHeadersReceived((details: any, callback: any) => {
+    const url = details.url as string
+    const needsCors = url.includes('rainviewer.com') ||
+                      url.includes('tile.meteologix.com') ||
+                      url.includes('maps.owm.io')
+    if (needsCors) {
+      const headers = details.responseHeaders || {}
+      headers['Access-Control-Allow-Origin'] = ['*']
+      callback({ responseHeaders: headers })
+    } else {
+      callback({})
+    }
+  })
+  console.log('[main] CORS header injection active for tile servers')
+
   console.log('[main] registering IPC handlers...')
   registerIpcHandlers()
   console.log('[main] IPC handlers registered')

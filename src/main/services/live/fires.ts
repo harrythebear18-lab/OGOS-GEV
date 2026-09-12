@@ -66,7 +66,8 @@ export async function getFireFeatures(): Promise<LiveFeature[]> {
   // Fallback: FIRMS with MAP_KEY (if set)
   if (FIRMS_MAP_KEY) {
     try {
-      const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${FIRMS_MAP_KEY}/VIIRS_SNPP_NRT/world/1`
+      // FIRMS area endpoint expects [west,south,east,north] bbox, not "world"
+      const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${FIRMS_MAP_KEY}/VIIRS_SNPP_NRT/-180,-90,180,90/1`
       const res = await fetch(url, { signal: AbortSignal.timeout(30000) })
       if (res.ok) {
         const csv = await res.text()

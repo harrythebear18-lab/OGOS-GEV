@@ -45,13 +45,27 @@ interface ErddapJsonResponse {
   }
 }
 
-async function fetchErddapJson(url: string, timeoutMs = 30000): Promise<ErddapJsonResponse> {
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(timeoutMs),
-    headers: { Accept: 'application/json' },
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
-  return (await res.json()) as ErddapJsonResponse
+async function fetchErddapJson(url: string, timeoutMs = 20000): Promise<ErddapJsonResponse> {
+  // Retry with exponential backoff — ERDDAP and NHC can be slow/flaky
+  const maxRetries = 2
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { Accept: 'application/json' },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
+      return (await res.json()) as ErddapJsonResponse
+    } catch (e) {
+      lastError = e as Error
+      if (attempt < maxRetries) {
+        const delay = 2000 * Math.pow(2, attempt) // 2s, 4s
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    }
+  }
+  throw lastError ?? new Error('fetchErddapJson failed')
 }
 
 function parseErddapTime(val: any): number {

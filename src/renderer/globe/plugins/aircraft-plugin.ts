@@ -227,6 +227,9 @@ export class AircraftPlugin implements EarthEnginePlugin {
           color: Cesium.Color.fromBytes(255, 234, 74, 255),
           outlineColor: Cesium.Color.WHITE.withAlpha(0.5),
           outlineWidth: 1,
+          // Aircraft at altitude: disable depth test within 200km so they're
+          // visible at range, but still occluded by the globe on the far side.
+          disableDepthTestDistance: 200000,
         },
         // No label here — managed by WorldOverlay for collision
         properties: {

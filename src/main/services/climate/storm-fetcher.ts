@@ -43,16 +43,25 @@ export class StormFetcher {
     ]
 
     let raw: string | null = null
+    // Try each URL with 1 retry on DNS failures (EAI_AGAIN is transient)
     for (const url of NHC_URLS) {
-      try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-        if (res.ok) {
-          raw = await res.text()
-          break
+      for (let attempt = 0; attempt < 2 && !raw; attempt++) {
+        try {
+          const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+          if (res.ok) {
+            raw = await res.text()
+            break
+          }
+        } catch (e) {
+          const msg = (e as Error).message
+          if (attempt === 0 && (msg.includes('EAI_AGAIN') || msg.includes('ENOTFOUND'))) {
+            await new Promise((r) => setTimeout(r, 3000)) // wait 3s before retry
+            continue
+          }
+          console.error(`[climate/storm] NHC fetch failed (${url}):`, e)
         }
-      } catch (e) {
-        console.error(`[climate/storm] NHC fetch failed (${url}):`, e)
       }
+      if (raw) break
     }
     if (!raw) return storms
 

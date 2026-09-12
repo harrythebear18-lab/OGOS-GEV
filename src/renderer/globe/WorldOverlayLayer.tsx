@@ -61,7 +61,7 @@ const containerStyle: React.CSSProperties = {
   right: 0,
   bottom: 0,
   pointerEvents: 'none',
-  zIndex: 15,
+  zIndex: 17,
   overflow: 'hidden',
 }
 
