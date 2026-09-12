@@ -46,10 +46,10 @@ async function fetchNdviTile(
     const url = `https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=MODIS_Terra_NDVI_8Day&CRS=EPSG:4326&BBOX=${bbox}&WIDTH=${reqWidth}&HEIGHT=${reqHeight}&FORMAT=image/png&TIME=${date}`
 
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-      if (!res.ok) continue
-      const buf = Buffer.from(await res.arrayBuffer())
-      if (buf.length < 100) continue
+      // Use HAL streaming I/O for backpressure-aware download
+      const { streamingIO } = await import('./hal/streaming-io')
+      const buf = await streamingIO.fetchToBuffer(url, { timeoutMs: 15000 })
+      if (!buf || buf.length < 100) continue
 
       const { PNG } = await import('pngjs')
       const png = PNG.sync.read(buf)

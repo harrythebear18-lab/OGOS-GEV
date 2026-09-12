@@ -5,18 +5,18 @@
  * This is the CPU fallback for when WebGPU compute is unavailable.
  *
  * Input (from worker pool):
- *   { sab: SharedArrayBuffer, width: number, height: number }
+ *   { elev: Float32Array, width: number, height: number, cellSizeX: number, cellSizeY: number }
  *
  * Output:
- *   { sab: SharedArrayBuffer } (same buffer, slope written in place)
+ *   { slope: Float32Array, width, height } — slope in degrees per cell
  *
- * The SharedArrayBuffer is transferred (not copied) — zero-copy I/O.
+ * Runs on a real OS thread — does not block the main process event loop.
  */
 
-module.exports = async function demSlope(data: { sab: SharedArrayBuffer; width: number; height: number }) {
-  const { sab, width, height } = data
-  const elev = new Float32Array(sab)
-  const slope = new Float32Array(sab.byteLength / 4) // separate output
+module.exports = async function demSlope(data) {
+  const { elev, width, height, cellSizeX, cellSizeY } = data
+  const slope = new Float32Array(width * height)
+  const RAD_TO_DEG = 180 / Math.PI
 
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
@@ -30,11 +30,13 @@ module.exports = async function demSlope(data: { sab: SharedArrayBuffer; width: 
       const s  = elev[(y + 1) * width + x]
       const se = elev[(y + 1) * width + (x + 1)]
 
-      const dzdx = ((ne + 2 * e + se) - (nw + 2 * w + sw)) / 8
-      const dzdy = ((sw + 2 * s + se) - (nw + 2 * n + ne)) / 8
-      slope[idx] = Math.atan(Math.sqrt(dzdx * dzdx + dzdy * dzdy))
+      const dzdx = ((ne + 2 * e + se) - (nw + 2 * w + sw)) / (8 * cellSizeX)
+      const dzdy = ((sw + 2 * s + se) - (nw + 2 * n + ne)) / (8 * cellSizeY)
+
+      const slopeRad = Math.atan(Math.sqrt(dzdx * dzdx + dzdy * dzdy))
+      slope[idx] = slopeRad * RAD_TO_DEG
     }
   }
 
-  return { slope: Array.from(slope), width, height }
+  return { slope, width, height }
 }

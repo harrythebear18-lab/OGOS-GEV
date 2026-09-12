@@ -43,12 +43,10 @@ async function fetchTilePng(z: number, x: number, y: number): Promise<Buffer | n
 
   const url = TILE_URL(z, x, y)
   try {
-    const res = await fetch(url)
-    if (!res.ok) {
-      if (res.status === 404) return null
-      throw new Error(`DEM tile fetch failed: ${res.status}`)
-    }
-    const buf = Buffer.from(await res.arrayBuffer())
+    // Use HAL streaming I/O for backpressure-aware download
+    const { streamingIO } = await import('./hal/streaming-io')
+    const buf = await streamingIO.fetchToBuffer(url, { timeoutMs: 20000 })
+    if (!buf) return null
 
     mkdirSync(dirname(local), { recursive: true })
     writeFileSync(local, buf)

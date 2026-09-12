@@ -35,6 +35,46 @@ export interface StreamToDiskOptions {
 
 class StreamingIO {
   /**
+   * Fetch a URL and stream it into a Buffer with backpressure.
+   * Real I/O: network → stream → chunks → Buffer, no full-buffer arrayBuffer() bloat.
+   * Returns null on 404 (common for DEM tiles).
+   */
+  async fetchToBuffer(url: string, opts: StreamFetchOptions): Promise<Buffer | null> {
+    const { timeoutMs = 30000, headers, signal } = opts
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true })
+
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: 'application/octet-stream, */*', ...headers },
+      })
+
+      if (!res.ok) {
+        if (res.status === 404) return null
+        throw new Error(`HTTP ${res.status}`)
+      }
+      if (!res.body) throw new Error('No response body')
+
+      // Stream chunks into a growing buffer — backpressure-aware
+      const chunks: Buffer[] = []
+      const reader = (res.body as ReadableStream).getReader()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(Buffer.from(value))
+      }
+
+      return Buffer.concat(chunks)
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  /**
    * Fetch a URL and stream it directly to disk without buffering in memory.
    * Real I/O: network → stream → disk, no full-buffer bloat.
    */

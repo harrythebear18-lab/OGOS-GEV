@@ -1,6 +1,10 @@
 /**
  * Slope Service — Horn's method slope computation.
  * Ported from OSINT-Global-OS.
+ *
+ * Uses the HAL worker pool for CPU parallelism — slope computation runs
+ * on a real OS thread, not the main process event loop. Falls back to
+ * inline JS loops if the worker pool is unavailable.
  */
 
 import type { LngLat, SlopeAnalysisRequest, SlopeAnalysisResponse, SlopeBand, ActivityProfile } from '@shared/types'
@@ -36,15 +40,61 @@ function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number)
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
-function computeSlopeGrid(tile: DemTile): number[][] {
-  const { grid, width, height } = tile
-  const [sw, ne] = tile.bounds
-  const latMid = (sw.lat + ne.lat) / 2
-  const latSpanM = haversineMeters(sw.lng, sw.lat, sw.lng, ne.lat)
-  const lngSpanM = haversineMeters(sw.lng, latMid, ne.lng, latMid)
-  const cellSizeX = lngSpanM / width
-  const cellSizeY = latSpanM / height
+/**
+ * Compute slope grid using the HAL worker pool (real OS thread).
+ * Falls back to inline JS loops if the worker pool is unavailable.
+ */
+async function computeSlopeGridWorker(
+  grid: (number | null)[][],
+  width: number,
+  height: number,
+  cellSizeX: number,
+  cellSizeY: number,
+): Promise<number[][]> {
+  // Flatten grid to Float32Array (null → 0)
+  const elev = new Float32Array(width * height)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      elev[y * width + x] = grid[y]?.[x] ?? 0
+    }
+  }
 
+  try {
+    const { getWorkerPool } = await import('./hal/worker-pool')
+    const pool = getWorkerPool()
+    const result = await pool.exec('dem-slope', {
+      elev, width, height, cellSizeX, cellSizeY,
+    })
+    if (result.ok && result.data) {
+      const slopeArr = (result.data as any).slope as Float32Array
+      // Convert back to number[][]
+      const slope: number[][] = []
+      for (let y = 0; y < height; y++) {
+        const row: number[] = []
+        for (let x = 0; x < width; x++) {
+          row.push(slopeArr[y * width + x])
+        }
+        slope.push(row)
+      }
+      console.log(`[hal] DEM slope computed on worker thread in ${result.durationMs}ms`)
+      return slope
+    }
+  } catch (e) {
+    console.warn('[hal] worker pool slope failed, falling back to inline:', e)
+  }
+
+  // Fallback: inline JS loops (original implementation)
+  return computeSlopeGridInline(grid, width, height, cellSizeX, cellSizeY)
+}
+
+/** Inline slope computation — original JS loop implementation (fallback) */
+function computeSlopeGridInline(
+  grid: (number | null)[][],
+  width: number,
+  height: number,
+  cellSizeX: number,
+  cellSizeY: number,
+): number[][] {
   const slope: number[][] = []
 
   for (let y = 0; y < height; y++) {
@@ -173,10 +223,10 @@ export async function analyzeSlopeArea(req: SlopeAnalysisRequest): Promise<Slope
   const activityProfile: ActivityProfile = (profile ?? 'hiking') as ActivityProfile
   const threshold = THRESHOLDS[activityProfile]
 
-  const { grid, width, height, swLng, neLat, lngStep, latStep } = await loadDemGridArea(bounds, zoom)
+  const { grid, width, height, cellSizeX, cellSizeY, swLng, neLat, lngStep, latStep } = await loadDemGridArea(bounds, zoom)
 
-  const tile: DemTile = { grid, width, height, bounds }
-  const slopeGrid = computeSlopeGrid(tile)
+  // Use HAL worker pool for slope computation (real OS thread)
+  const slopeGrid = await computeSlopeGridWorker(grid, width, height, cellSizeX, cellSizeY)
 
   const bands = clusterSlopeBands(slopeGrid, threshold, width, height, swLng, neLat, lngStep, latStep)
 

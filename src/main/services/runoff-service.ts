@@ -137,8 +137,8 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
   const cellAreaM2 = cellSizeM * cellSizeM
 
   // ── Step 1: Priority-Flood depression filling (Barnes 2014) ──
-  // Proper implementation with binary heap — O(n log n), correct cascading fills
-  priorityFlood(filled, width, height)
+  // Uses HAL worker pool — runs on a real OS thread, not the event loop
+  await priorityFloodWorker(filled, width, height)
 
   // ── Step 2: D8 flow direction with diagonal correction ──
   const flowDir = new Int8Array(width * height).fill(-1)
@@ -446,6 +446,31 @@ export async function analyzeRunoff(req: RunoffAnalysisRequest): Promise<RunoffA
     watershedDivides,
     rainfallMm,
   }
+}
+
+/**
+ * Priority-Flood via HAL worker pool — runs on a real OS thread.
+ * Falls back to inline implementation if the worker pool is unavailable.
+ * Modifies `filled` in place (depression-filled elevations).
+ */
+async function priorityFloodWorker(filled: Float32Array, width: number, height: number): Promise<void> {
+  try {
+    const { getWorkerPool } = await import('./hal/worker-pool')
+    const pool = getWorkerPool()
+    const result = await pool.exec('priority-flood', {
+      elev: filled, width, height,
+    })
+    if (result.ok && result.data) {
+      const filledResult = (result.data as any).filled as Float32Array
+      filled.set(filledResult)
+      console.log(`[hal] Priority-Flood computed on worker thread in ${result.durationMs}ms`)
+      return
+    }
+  } catch (e) {
+    console.warn('[hal] worker pool priority-flood failed, falling back to inline:', e)
+  }
+  // Fallback: inline JS implementation
+  priorityFlood(filled, width, height)
 }
 
 /**

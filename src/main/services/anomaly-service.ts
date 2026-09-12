@@ -95,21 +95,55 @@ export async function analyzeAnomalyArea(req: AnomalyAnalysisRequest): Promise<A
 
   const { grid, width, height, cellSizeM, swLng, neLat, lngStep, latStep } = await loadDemGridArea(bounds, zoom)
 
-  const smoothed = boxBlur(grid, width, height)
-
-  const residuals: number[][] = []
-  for (let y = 0; y < height; y++) {
-    const row: number[] = []
-    for (let x = 0; x < width; x++) {
-      row.push((grid[y]?.[x] ?? 0) - (smoothed[y]?.[x] ?? 0))
+  // Use HAL worker pool for box-blur + residual computation (real OS thread)
+  let residuals: number[][] = []
+  let stdDev = 0
+  try {
+    const { getWorkerPool } = await import('./hal/worker-pool')
+    const pool = getWorkerPool()
+    // Flatten grid to Float32Array
+    const elev = new Float32Array(width * height)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        elev[y * width + x] = grid[y]?.[x] ?? 0
+      }
     }
-    residuals.push(row)
+    const result = await pool.exec('anomaly-blur', {
+      elev, width, height, blurRadius: BLUR_RADIUS,
+    })
+    if (result.ok && result.data) {
+      const resArr = (result.data as any).residuals as Float32Array
+      stdDev = (result.data as any).stdDev as number
+      for (let y = 0; y < height; y++) {
+        const row: number[] = []
+        for (let x = 0; x < width; x++) {
+          row.push(resArr[y * width + x])
+        }
+        residuals.push(row)
+      }
+      console.log(`[hal] anomaly blur computed on worker thread in ${result.durationMs}ms`)
+    }
+  } catch (e) {
+    console.warn('[hal] worker pool anomaly blur failed, falling back to inline:', e)
   }
 
-  const allResiduals = residuals.flat()
-  const mean = allResiduals.reduce((a, b) => a + b, 0) / allResiduals.length
-  const variance = allResiduals.reduce((a, b) => a + (b - mean) ** 2, 0) / allResiduals.length
-  const stdDev = Math.sqrt(variance)
+  if (stdDev < 0.1 || residuals.length === 0) {
+    // Fallback: inline JS implementation
+    const smoothed = boxBlur(grid, width, height)
+    residuals = []
+    for (let y = 0; y < height; y++) {
+      const row: number[] = []
+      for (let x = 0; x < width; x++) {
+        row.push((grid[y]?.[x] ?? 0) - (smoothed[y]?.[x] ?? 0))
+      }
+      residuals.push(row)
+    }
+    const allResiduals = residuals.flat()
+    const mean = allResiduals.reduce((a, b) => a + b, 0) / allResiduals.length
+    const variance = allResiduals.reduce((a, b) => a + (b - mean) ** 2, 0) / allResiduals.length
+    stdDev = Math.sqrt(variance)
+  }
+
   if (stdDev < 0.1) return { zones: [], bounds }
 
   const mask: boolean[][] = Array.from({ length: height }, () => new Array(width).fill(false))

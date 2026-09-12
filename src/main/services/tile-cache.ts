@@ -115,9 +115,10 @@ class TileCacheService {
 
     const url = src.urlTemplate(z, x, y)
     try {
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const buf = Buffer.from(await res.arrayBuffer())
+      // Use HAL streaming I/O for backpressure-aware download
+      const { streamingIO } = await import('./hal/streaming-io')
+      const buf = await streamingIO.fetchToBuffer(url, { timeoutMs: 20000 })
+      if (!buf) throw new Error('HTTP error or 404')
       await fsp.mkdir(path.dirname(file), { recursive: true })
       await fsp.writeFile(file, buf)
       await fsp.writeFile(meta, JSON.stringify({ cachedAt: Date.now() }))
