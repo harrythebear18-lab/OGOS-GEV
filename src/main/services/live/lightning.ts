@@ -12,14 +12,11 @@ import type { LiveFeature } from '@shared/types'
 import { WebSocket } from 'ws'
 
 const WS_SERVERS = [
-  'wss://ws1.blitzortung.org:3000/',
-  'wss://ws2.blitzortung.org:3000/',
-  'wss://ws3.blitzortung.org:3000/',
-  'wss://ws4.blitzortung.org:3000/',
-  'wss://ws5.blitzortung.org:3000/',
-  'wss://ws6.blitzortung.org:3000/',
-  'wss://ws7.blitzortung.org:3000/',
-  'wss://ws8.blitzortung.org:3000/',
+  'wss://ws1.blitzortung.org/',
+  'wss://ws7.blitzortung.org/',
+  'wss://ws8.blitzortung.org/',
+  'wss://live.lightningmaps.org/',
+  'wss://live2.lightningmaps.org/',
 ]
 
 const STRIKE_LIFETIME = 30 * 60 * 1000  // 30 minutes
