@@ -1,0 +1,82 @@
+Visentrix Plugin License (VPL)
+================================
+Version 1.0 — August 2026
+
+Copyright (c) 2026 Visentrix
+
+Layer 3 — Plugins (Hybrid)
+
+This license governs plugins developed for the OSINT Sentinel Workstation.
+Plugins are extensions that connect to the Visentrix Open Cockpit (Layer 1)
+to add functionality. They may be open source, commercial, private, or
+experimental.
+
+WHAT IS A PLUGIN
+----------------
+
+A plugin is any software module that:
+
+  - Registers with the workstation's plugin manager via the
+    EarthEnginePlugin lifecycle (register, unregister, update,
+    getStats, getControls, onControl).
+  - Links to the Cockpit layer (Layer 1) through the public plugin API.
+  - Does not directly call, import, or link to Core Engine (Layer 2)
+    internal modules, kernels, or worker scripts.
+
+PERMITTED USES
+--------------
+
+You may:
+
+  a. Develop and distribute open-source plugins under any OSI-approved
+     license (MIT, Apache-2.0, GPL, etc.).
+
+  b. Develop and distribute commercial plugins, provided they link only
+     to the Cockpit layer (Layer 1) public API.
+
+  c. Develop private or internal plugins for personal or organizational
+     use.
+
+  d. Develop mission-specific or experimental plugins.
+
+  e. Sell plugins independently of the Core Engine.
+
+  f. Distribute plugins through any channel (GitHub, marketplace, direct).
+
+RESTRICTIONS
+------------
+
+You may NOT:
+
+  a. Develop plugins that directly import, call, or link to Core Engine
+     (Layer 2) internal modules. Plugins must use the public Cockpit API
+     only.
+
+  b. Develop plugins that bypass or circumvent the license validation,
+     machine fingerprinting, or feature gating of the Core Engine.
+
+  c. Develop plugins that extract, replicate, or substitute for the
+     Core Engine's compute functionality (HAL, GPU kernels, worker pool,
+     streaming I/O, prediction engine, native bridges).
+
+  d. Distribute plugins that include or bundle Core Engine code.
+
+  e. Use the plugin system to create a competing "engine" product that
+     replicates the Core Engine's functionality.
+
+CLARIFICATION
+-------------
+
+If a plugin needs heavy compute (DEM analysis, band math, anomaly
+detection, etc.), it must request that compute through the Cockpit's
+public IPC API, which will route the request to the Core Engine if a
+valid license is present. The plugin itself must not implement or
+replicate the Core Engine's compute logic.
+
+NO WARRANTY
+-----------
+
+PLUGINS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. VISENTRIX
+IS NOT LIABLE FOR ANY DAMAGES ARISING FROM THE USE OF PLUGINS.
+
+For the full list of what is and is not covered, see LICENSING.md.

@@ -142,6 +142,12 @@ export const IPC = {
   XR_POSE: 'xr:pose',
   XR_FRAME: 'xr:frame',
   XR_CONTROLLERS: 'xr:controllers',
+
+  // License / activation (monetization)
+  LICENSE_STATUS: 'license:status',
+  LICENSE_ACTIVATE: 'license:activate',
+  LICENSE_DEACTIVATE: 'license:deactivate',
+  LICENSE_MACHINE_ID: 'license:machine-id',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

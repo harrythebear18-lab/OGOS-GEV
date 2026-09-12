@@ -108,8 +108,8 @@ To start the CLIP server:
 
 ```bash
 python scripts/clip_server.py
-# or with explicit Python path:
-C:\Users\htsou\AppData\Local\Programs\Python\Python313\python.exe scripts/clip_server.py
+# or with explicit Python path (adjust for your install):
+# %LOCALAPPDATA%\Programs\Python\Python313\python.exe scripts/clip_server.py
 ```
 
 To check AI service status:

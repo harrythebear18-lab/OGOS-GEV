@@ -8,13 +8,18 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { checkClipHealth } from './clip-service'
 
-// Common Python locations on Windows
+// Common Python locations — dynamic, no hardcoded user paths
 const PYTHON_PATHS = [
-  'C:\\Users\\htsou\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
-  'C:\\Users\\htsou\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-  'C:\\Users\\htsou\\AppData\\Local\\Programs\\Python\\Python311\\python.exe',
   'python',
   'python3',
+  // Windows: check common install locations relative to LocalAppData
+  ...(process.env.LOCALAPPDATA
+    ? [
+      `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python313\\python.exe`,
+      `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python312\\python.exe`,
+      `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python311\\python.exe`,
+    ]
+    : []),
 ]
 
 let clipProcess: ChildProcess | null = null

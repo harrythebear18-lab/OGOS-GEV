@@ -18,6 +18,7 @@ import { analyzeAnomalyArea } from './services/anomaly-service'
 import { generateSearchZones } from './services/search-service'
 import { findRestPoints } from './services/rest-service'
 import { planRoute } from './services/route-service'
+import { licenseManager } from './services/license-manager'
 import { analyzeFallRisk } from './services/fall-risk-service'
 import { analyzeRunoff } from './services/runoff-service'
 import { analyzeRemainsCorridor } from './services/remains-corridor-service'
@@ -628,6 +629,24 @@ export function registerIpcHandlers(): void {
       console.error('[ipc] cross-domain error:', e)
     }
   }, 60_000)
+
+  /* ── License / activation (monetization) ── */
+  ipcMain.handle(IPC.LICENSE_STATUS, () => {
+    return licenseManager.getStatus()
+  })
+
+  ipcMain.handle(IPC.LICENSE_ACTIVATE, async (_event, key: string) => {
+    return licenseManager.activate(key)
+  })
+
+  ipcMain.handle(IPC.LICENSE_DEACTIVATE, () => {
+    licenseManager.deactivate()
+    return true
+  })
+
+  ipcMain.handle(IPC.LICENSE_MACHINE_ID, () => {
+    return licenseManager.getMachineId()
+  })
 
   console.log('[ipc] all IPC handlers registered')
 }

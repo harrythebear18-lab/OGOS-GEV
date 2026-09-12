@@ -1,0 +1,43 @@
+Visentrix Open Cockpit License (VOC-L)
+=======================================
+Version 1.0 — August 2026
+
+Copyright (c) 2026 Visentrix
+
+Layer 1 — The Cockpit (Open Source)
+
+This license covers the open-source "cockpit" layer of the OSINT Sentinel
+Workstation: the Electron shell, Cesium globe integration, plugin manager,
+UI panels, draw tools, basic plugins, analyst engine, world overlay, HUD,
+live feed wiring, routing UI, hydrology UI, AI console, and documentation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Cockpit Software"),
+to deal in the Cockpit Software without restriction, including without
+limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Cockpit Software, and to permit persons
+to whom the Cockpit Software is furnished to do so, subject to the following
+conditions:
+
+1. The above copyright notice and this permission notice shall be included
+   in all copies or substantial portions of the Cockpit Software.
+
+2. The Cockpit Software is provided "AS IS", without warranty of any kind,
+   express or implied, including but not limited to the warranties of
+   merchantability, fitness for a particular purpose and noninfringement.
+   In no event shall the authors or copyright holders be liable for any
+   claim, damages or other liability, whether in an action of contract,
+   tort or otherwise, arising from, out of or in connection with the
+   Cockpit Software or the use or other dealings in the Cockpit Software.
+
+3. This license applies ONLY to the Cockpit Software as defined above.
+   The Core Engine (HAL, WebGPU kernels, worker pool, streaming I/O,
+   WebCodecs integration, WASM SIMD, prediction engine, native bridges,
+   CUDA bridges, and heavy compute kernels) is governed by the separate
+   Visentrix Core Engine License (VCE-L) and is NOT covered by this
+   license. See LICENSE.core for details.
+
+4. Plugins linking to the Cockpit Software are governed by the Visentrix
+   Plugin License (VPL). See LICENSE.plugins for details.
+
+For the full list of what is and is not covered, see LICENSING.md.

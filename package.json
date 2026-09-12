@@ -5,7 +5,7 @@
   "main": "out/main/index.js",
   "private": true,
   "author": "",
-  "license": "MIT",
+  "license": "SEE LICENSING.md (VOC-L for Cockpit, VCE-L for Core Engine, VPL for Plugins)",
   "scripts": {
     "copy:cesium": "node -e \"require('fs').cpSync('node_modules/cesium/Build/Cesium', 'public/cesium', { recursive: true, force: true })\"",
     "dev": "npm run copy:cesium && node scripts/dev.js",

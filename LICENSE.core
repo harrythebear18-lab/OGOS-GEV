@@ -1,0 +1,94 @@
+Visentrix Core Engine License (VCE-L)
+=======================================
+Version 1.0 — August 2026
+
+Copyright (c) 2026 Visentrix. All rights reserved.
+
+Layer 2 — The Core Engine (Proprietary)
+
+This license covers the protected "Core Engine" of the OSINT Sentinel
+Workstation. The Core Engine includes:
+
+  - Hardware Abstraction Layer (HAL)
+    - WebGPU compute kernels (WGSL shaders)
+    - Worker thread pool and worker scripts
+    - Streaming I/O pipelines
+    - WebCodecs integration
+    - WASM SIMD kernels
+    - CUDA native bridges
+  - Hydrology engine internals (Priority-Flood, runoff simulation)
+  - Canopy engine internals
+  - Prediction engine (severe-weather, storm-track, radar nowcast,
+    sensor-failure, ocean-atmosphere coupler)
+  - Native bridges (OpenXR, CUDA, AVX2/AVX-512, NVENC)
+  - Heavy compute kernels (DEM slope, hillshade, anomaly, band math)
+  - GPU kernel compilation and dispatch
+  - Multi-node synchronization
+  - HyperForge integration transport
+
+GRANT OF LICENSE
+----------------
+
+1. Evaluation and Trial Use
+   Visentrix grants you a personal, non-exclusive, non-transferable,
+   revocable license to use the Core Engine in evaluation mode for a
+   period of fourteen (14) days from first installation, subject to the
+   terms of this license.
+
+2. Licensed Use
+   Upon purchase of a valid Visentrix license key, Visentrix grants you
+   a personal, non-exclusive, non-transferable license to use the Core
+   Engine on a single machine, bound to that machine's hardware
+   fingerprint, for the duration of the license term.
+
+3. Open Cockpit Integration
+   The Core Engine may be used in conjunction with the Visentrix Open
+   Cockpit (Layer 1) software. The Cockpit may operate independently
+   without the Core Engine, with reduced functionality.
+
+RESTRICTIONS
+------------
+
+You may NOT:
+
+  a. Copy, reproduce, or distribute the Core Engine or any portion of it,
+     except as required for backup of your licensed installation.
+
+  b. Reverse engineer, decompile, disassemble, or otherwise attempt to
+     derive the source code of the Core Engine, except to the extent
+     that applicable law expressly prohibits this restriction.
+
+  c. Modify, adapt, translate, or create derivative works based on the
+     Core Engine.
+
+  d. Sublicense, lease, rent, lend, or otherwise transfer the Core
+     Engine or your license rights to any third party.
+
+  e. Use the Core Engine in a commercial SaaS offering or repackage it
+     as part of a competing product.
+
+  f. Remove or alter any copyright, trademark, or other proprietary
+     notices on or in the Core Engine.
+
+  g. Bypass, disable, or circumvent the license validation or machine
+     fingerprinting mechanisms.
+
+NO WARRANTY
+-----------
+
+THE CORE ENGINE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL VISENTRIX BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE CORE ENGINE OR THE USE OR OTHER
+DEALINGS IN THE CORE ENGINE.
+
+TERMINATION
+-----------
+
+This license terminates automatically if you fail to comply with any
+term. Upon termination, you must destroy all copies of the Core Engine.
+The Open Cockpit (Layer 1) license survives termination of this license.
+
+For the full list of what is and is not covered, see LICENSING.md.
