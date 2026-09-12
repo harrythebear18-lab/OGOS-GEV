@@ -208,7 +208,7 @@ export class FiresPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.fromBytes(255, 200, 100, 200)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
       properties: {
         brightness: f.brightness,

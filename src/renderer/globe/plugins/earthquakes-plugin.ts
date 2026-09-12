@@ -152,13 +152,13 @@ export class EarthquakesPlugin implements EarthEnginePlugin {
 
     this.dataSource.entities.add({
       id: `quake:${f.id}`,
-      position: Cesium.Cartesian3.fromDegrees(f.lon, f.lat, -f.depth * 1000),
+      position: Cesium.Cartesian3.fromDegrees(f.lon, f.lat, 0),
       point: {
         pixelSize,
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.6)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
       properties: {
         mag: f.mag,
