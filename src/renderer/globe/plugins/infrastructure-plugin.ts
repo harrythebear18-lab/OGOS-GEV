@@ -15,6 +15,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WorldOverlay } from '../WorldOverlay'
 import type { InfrastructureFeature, InfrastructureResponse, InfrastructureType, BBox, LngLat } from '@shared/types'
 
 const MAX_VISIBLE_ENTITIES = 20000
@@ -66,6 +67,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
 
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
+  private worldOverlay: WorldOverlay | null = null
   private ipc: typeof window.api | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private allFeatures: InfrastructureFeature[] = []
@@ -77,6 +79,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
 
   async register(ctx: PluginContext): Promise<void> {
     this.viewer = ctx.viewer
+    this.worldOverlay = ctx.worldOverlay ?? null
     this.ipc = ctx.ipc
     this.dataSource = new Cesium.CustomDataSource('infrastructure')
     ctx.viewer.dataSources.add(this.dataSource)
@@ -84,10 +87,14 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
   }
 
   unregister(): void {
+    if (this.worldOverlay) {
+      this.worldOverlay.clearCategory('infrastructure')
+    }
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
+    this.worldOverlay = null
     this.allFeatures = []
     this.lastFetchBbox = null
     this.lastViewBbox = null
@@ -131,6 +138,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
 
   clear(): void {
     this.dataSource?.entities.removeAll()
+    this.worldOverlay?.clearCategory('infrastructure')
     this.allFeatures = []
     this.lastViewBbox = null
     this.lastError = null
@@ -209,6 +217,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
       this.allFeatures = result.features.slice(0, MAX_VISIBLE_ENTITIES)
       this.lastError = result.error ?? null
       this.dataSource.entities.removeAll()
+      this.worldOverlay?.clearCategory('infrastructure')
       this.lastViewBbox = null // force re-cull
 
       // Initial cull using the fetch bbox as viewport
@@ -260,6 +269,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
     }
     for (const id of toRemove) {
       this.dataSource.entities.removeById(id)
+      this.worldOverlay?.removeCard(id)
     }
 
     // Add new entities
@@ -292,6 +302,27 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
     const size = TYPE_PIXEL_SIZE[f.type] ?? 6
     const label = f.name ? f.name.substring(0, 24) : (f.icao || f.iata || '')
 
+    // Register card through WorldOverlay for high-value types only
+    // (airports, power plants, helipads — named, low-volume, high-interest)
+    if (this.worldOverlay && (f.type === 'airport' || f.type === 'power_plant' || f.type === 'helipad')) {
+      const colorHex = f.type === 'airport' ? '#4a9eff' : f.type === 'power_plant' ? '#f59e0b' : '#78b4ff'
+      const subtitle = [
+        f.type === 'airport' ? (f.icao || f.iata || 'Airport') : f.type === 'power_plant' ? (f.outputMw ? `${f.outputMw} MW` : 'Power Plant') : 'Helipad',
+        f.fuel,
+        f.operator,
+      ].filter(Boolean).join(' • ')
+      this.worldOverlay.registerCard({
+        id: f.id,
+        lat: center.lat,
+        lon: center.lng,
+        title: label || f.id,
+        subtitle,
+        category: 'infrastructure',
+        priority: f.type === 'airport' ? 8 : f.type === 'power_plant' ? 7 : 4,
+        color: colorHex,
+      })
+    }
+
     // Polygon footprint for airports / power plants / large substations
     if (FOOTPRINT_TYPES.has(f.type) && f.coords.length >= 3) {
       const positions = f.coords.map((c) => Cesium.Cartesian3.fromDegrees(c.lng, c.lat, 1))
@@ -311,16 +342,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
           outlineWidth: new Cesium.ConstantProperty(1),
           disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
         },
-        label: label ? {
-          text: label,
-          font: '10px sans-serif',
-          fillColor: new Cesium.ConstantProperty(color.withAlpha(0.95)),
-          outlineColor: new Cesium.ConstantProperty(Cesium.Color.BLACK),
-          outlineWidth: new Cesium.ConstantProperty(2),
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -14),
-          disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
-        } : undefined,
+        // No label here — managed by WorldOverlay for collision
         properties: {
           type: f.type,
           osmType: f.osmType,
@@ -348,16 +370,7 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
         outlineWidth: new Cesium.ConstantProperty(1),
         disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
       },
-      label: label ? {
-        text: label,
-        font: '9px sans-serif',
-        fillColor: new Cesium.ConstantProperty(color.withAlpha(0.9)),
-        outlineColor: new Cesium.ConstantProperty(Cesium.Color.BLACK),
-        outlineWidth: new Cesium.ConstantProperty(2),
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        pixelOffset: new Cesium.Cartesian2(0, -12),
-        disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
-      } : undefined,
+      // No label here — managed by WorldOverlay for collision
       properties: {
         type: f.type,
         osmType: f.osmType,

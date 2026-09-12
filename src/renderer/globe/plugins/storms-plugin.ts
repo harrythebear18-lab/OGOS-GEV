@@ -8,6 +8,7 @@
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
+import type { WorldOverlay } from '../WorldOverlay'
 import type { Storm } from '@shared/types'
 
 function stormIntensityColor(intensity: string): Cesium.Color {
@@ -20,6 +21,16 @@ function stormIntensityColor(intensity: string): Cesium.Color {
   }
 }
 
+function stormIntensityColorHex(intensity: string): string {
+  switch (intensity) {
+    case 'light': return '#4fc3f7'
+    case 'moderate': return '#ffaa00'
+    case 'heavy': return '#ff6600'
+    case 'extreme': return '#ff3366'
+    default: return '#4fc3f7'
+  }
+}
+
 export class StormsPlugin implements EarthEnginePlugin {
   id = 'storms'
   name = 'Storms (NHC)'
@@ -27,6 +38,7 @@ export class StormsPlugin implements EarthEnginePlugin {
 
   private viewer: Cesium.Viewer | null = null
   private dataSource: Cesium.CustomDataSource | null = null
+  private worldOverlay: WorldOverlay | null = null
   private status: PluginStats = { count: 0, status: 'disabled' }
   private unsubscribe: (() => void) | null = null
   private knownStorms = new Set<string>()
@@ -36,6 +48,7 @@ export class StormsPlugin implements EarthEnginePlugin {
 
   register(ctx: PluginContext): void {
     this.viewer = ctx.viewer
+    this.worldOverlay = ctx.worldOverlay ?? null
     this.dataSource = new Cesium.CustomDataSource('storms')
     ctx.viewer.dataSources.add(this.dataSource)
     this.status = { count: 0, status: 'loading' }
@@ -55,10 +68,14 @@ export class StormsPlugin implements EarthEnginePlugin {
       this.unsubscribe()
       this.unsubscribe = null
     }
+    if (this.worldOverlay) {
+      this.worldOverlay.clearCategory('storm')
+    }
     if (this.dataSource && this.viewer && !this.viewer.isDestroyed?.()) {
       this.viewer.dataSources.remove(this.dataSource)
     }
     this.dataSource = null
+    this.worldOverlay = null
     this.knownStorms.clear()
     this.viewer = null
     this.status = { count: 0, status: 'disabled' }
@@ -123,6 +140,7 @@ export class StormsPlugin implements EarthEnginePlugin {
     for (const id of toRemove) {
       this.dataSource.entities.removeById(`storm:${id}`)
       this.dataSource.entities.removeById(`storm-track:${id}`)
+      this.worldOverlay?.removeCard(`storm:${id}`)
       this.knownStorms.delete(id)
     }
 
@@ -140,6 +158,7 @@ export class StormsPlugin implements EarthEnginePlugin {
     const id = `storm:${s.id}`
     const position = Cesium.Cartesian3.fromDegrees(s.lon, s.lat, 0)
     const color = stormIntensityColor(s.intensity || 'moderate')
+    const colorHex = stormIntensityColorHex(s.intensity || 'moderate')
 
     const existing = this.dataSource.entities.getById(id)
     if (!existing) {
@@ -153,15 +172,7 @@ export class StormsPlugin implements EarthEnginePlugin {
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
         },
-        label: {
-          text: s.name || '',
-          font: '10px monospace',
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -16),
-        },
+        // No label here — managed by WorldOverlay for collision
         properties: {
           classification: s.classification,
           intensity: s.intensity,
@@ -171,6 +182,25 @@ export class StormsPlugin implements EarthEnginePlugin {
       } as any)
     } else {
       ;(existing.position as Cesium.ConstantPositionProperty).setValue(position)
+    }
+
+    // Register card through shared WorldOverlay (collision-managed)
+    if (this.worldOverlay) {
+      const subtitle = [
+        s.classification || s.intensity,
+        s.windSpeedKt ? `${s.windSpeedKt}kt` : null,
+        s.pressureMB ? `${s.pressureMB}mb` : null,
+      ].filter(Boolean).join(' • ')
+      this.worldOverlay.registerCard({
+        id: `storm:${s.id}`,
+        lat: s.lat,
+        lon: s.lon,
+        title: s.name || s.id,
+        subtitle,
+        category: 'storm',
+        priority: s.intensity === 'extreme' ? 10 : s.intensity === 'heavy' ? 8 : 6,
+        color: colorHex,
+      })
     }
   }
 
