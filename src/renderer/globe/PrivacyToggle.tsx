@@ -155,7 +155,7 @@ export default function SecurityToggle({ onChange }: SecurityToggleProps) {
 
   const levelConfig = {
     0: { label: '🛡 LOCK', color: '#4aff8a', bg: 'rgba(74, 255, 138, 0.15)', border: 'rgba(74, 255, 138, 0.5)', glow: 'rgba(74, 255, 138, 0.3)' },
-    1: { label: '🧠 AI', color: '#4ad8ff', bg: 'rgba(74, 216, 255, 0.15)', border: 'rgba(74, 216, 255, 0.5)', glow: 'rgba(74, 216, 255, 0.3)' },
+    1: { label: '🧠 AI', color: '#4aff8a', bg: 'rgba(74, 255, 138, 0.15)', border: 'rgba(74, 255, 138, 0.5)', glow: 'rgba(74, 255, 138, 0.3)' },
     2: { label: '⚡ FULL', color: '#ffea4a', bg: 'rgba(255, 234, 74, 0.15)', border: 'rgba(255, 234, 74, 0.5)', glow: 'rgba(255, 234, 74, 0.3)' },
     3: { label: '🔓 NET', color: '#ff4a4a', bg: 'rgba(255, 74, 74, 0.15)', border: 'rgba(255, 74, 74, 0.5)', glow: 'rgba(255, 74, 74, 0.3)' },
   }
@@ -227,13 +227,13 @@ export default function SecurityToggle({ onChange }: SecurityToggleProps) {
         <div style={modalBackdrop}>
           <div style={{
             ...modalCard,
-            borderColor: pendingLevel <= 1 ? 'rgba(74, 216, 255, 0.3)' : 'rgba(255, 74, 74, 0.4)',
+            borderColor: pendingLevel === 1 ? 'rgba(74, 255, 138, 0.4)' : pendingLevel === 2 ? 'rgba(255, 234, 74, 0.4)' : 'rgba(255, 74, 74, 0.4)',
           }}>
             <div style={{
               ...modalTitle,
-              color: pendingLevel <= 1 ? '#4ad8ff' : '#ff4a4a',
+              color: pendingLevel === 1 ? '#4aff8a' : pendingLevel === 2 ? '#ffea4a' : '#ff4a4a',
             }}>
-              {pendingLevel <= 1 ? '✓ ADVANCE TO' : '⚠ ADVANCE TO'} {stageNames[pendingLevel]}?
+              {pendingLevel === 1 ? '✓' : '⚠'} ADVANCE TO {stageNames[pendingLevel]}?
             </div>
             <div style={modalText}>
               {pendingLevel === 1 && 'You are advancing to AI mode. The AI gets finer regional context (~11km) but still no exact coordinates. It will still say "the selected region" and treat you as locationless. Network data stays hidden.'}
@@ -241,7 +241,7 @@ export default function SecurityToggle({ onChange }: SecurityToggleProps) {
               {pendingLevel === 3 && 'You are advancing to NETWORK mode. This exposes your public IP, ISP, network connections, DNS servers, process names, and plots your location on the globe. This reveals your local/home network and all I/O endpoints.'}
             </div>
             <div style={modalHint}>
-              Type <strong style={{ color: pendingLevel <= 1 ? '#4ad8ff' : '#ff4a4a' }}>{confirmWord}</strong> to continue:
+              Type <strong style={{ color: pendingLevel === 1 ? '#4aff8a' : pendingLevel === 2 ? '#ffea4a' : '#ff4a4a' }}>{confirmWord}</strong> to continue:
             </div>
             <input
               type="text"
@@ -276,15 +276,15 @@ export default function SecurityToggle({ onChange }: SecurityToggleProps) {
         <div style={modalBackdrop}>
           <div style={{
             ...modalCard,
-            borderColor: pendingLevel <= 1 ? 'rgba(74, 216, 255, 0.4)' : 'rgba(255, 74, 74, 0.6)',
+            borderColor: pendingLevel === 1 ? 'rgba(74, 255, 138, 0.4)' : pendingLevel === 2 ? 'rgba(255, 234, 74, 0.4)' : 'rgba(255, 74, 74, 0.6)',
             width: 420,
           }}>
             <div style={{
               ...modalTitle,
               fontSize: 14,
-              color: pendingLevel <= 1 ? '#4ad8ff' : '#ff4a4a',
+              color: pendingLevel === 1 ? '#4aff8a' : pendingLevel === 2 ? '#ffea4a' : '#ff4a4a',
             }}>
-              {pendingLevel <= 1 ? '✓ CONFIRM ADVANCE' : '⚠ FINAL WARNING'}
+              {pendingLevel === 1 ? '✓ CONFIRM ADVANCE' : '⚠ FINAL WARNING'}
             </div>
             <div style={modalText}>
               You have confirmed you want to advance to {stageNames[pendingLevel]}. By clicking OK:
@@ -294,9 +294,11 @@ export default function SecurityToggle({ onChange }: SecurityToggleProps) {
                 <li key={i}>{typeof item === 'string' ? item : <strong>{item.bold}</strong>}</li>
               ))}
             </ul>
-            <div style={{ ...modalText, color: pendingLevel <= 1 ? '#4ad8ff' : '#ff8a8a', fontWeight: 'bold' }}>
-              {pendingLevel <= 1
+            <div style={{ ...modalText, color: pendingLevel === 1 ? '#4aff8a' : pendingLevel === 2 ? '#ffea4a' : '#ff8a8a', fontWeight: 'bold' }}>
+              {pendingLevel === 1
                 ? 'No personal data is exposed at this stage. Network data and your location stay hidden.'
+                : pendingLevel === 2
+                ? 'Exact coordinates are revealed to the AI, but network data and your identity stay hidden.'
                 : 'If you are screen-recording, streaming, or sharing your screen, this will expose your personal data.'}
             </div>
             <div style={modalActions}>
