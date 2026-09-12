@@ -162,7 +162,6 @@ export class CaseProfilesPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
         outlineWidth: new Cesium.ConstantProperty(2),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       label: {
         text: marker.label,
@@ -172,7 +171,6 @@ export class CaseProfilesPlugin implements EarthEnginePlugin {
         outlineWidth: new Cesium.ConstantProperty(2),
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         pixelOffset: new Cesium.Cartesian2(0, -18),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       properties: {
         description: marker.description,

@@ -340,7 +340,6 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
           color: new Cesium.ConstantProperty(color),
           outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
           outlineWidth: new Cesium.ConstantProperty(1),
-          disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
         },
         // No label here — managed by WorldOverlay for collision
         properties: {
@@ -368,7 +367,6 @@ export class InfrastructurePlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE.withAlpha(0.6)),
         outlineWidth: new Cesium.ConstantProperty(1),
-        disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
       },
       // No label here — managed by WorldOverlay for collision
       properties: {

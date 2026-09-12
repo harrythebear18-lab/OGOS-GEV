@@ -201,7 +201,6 @@ export class RemainsCorridorPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(Cesium.Color.fromBytes(255, 74, 74, 255)),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
         outlineWidth: new Cesium.ConstantProperty(2),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       label: {
         text: new Cesium.ConstantProperty('FALL POINT'),
@@ -211,7 +210,6 @@ export class RemainsCorridorPlugin implements EarthEnginePlugin {
         outlineWidth: new Cesium.ConstantProperty(2),
         style: new Cesium.ConstantProperty(Cesium.LabelStyle.FILL_AND_OUTLINE),
         pixelOffset: new Cesium.ConstantProperty(new Cesium.Cartesian2(0, -18)),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
     } as any)
   }
@@ -277,7 +275,6 @@ export class RemainsCorridorPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(Cesium.Color.fromBytes(255, 74, 138, 255)),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
         outlineWidth: new Cesium.ConstantProperty(2),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       label: {
         text: new Cesium.ConstantProperty('CHOKE'),
@@ -287,7 +284,6 @@ export class RemainsCorridorPlugin implements EarthEnginePlugin {
         outlineWidth: new Cesium.ConstantProperty(2),
         style: new Cesium.ConstantProperty(Cesium.LabelStyle.FILL_AND_OUTLINE),
         pixelOffset: new Cesium.ConstantProperty(new Cesium.Cartesian2(0, -14)),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       properties: { reason: choke.reason },
     } as any)

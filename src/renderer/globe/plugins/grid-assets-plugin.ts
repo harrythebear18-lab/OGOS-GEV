@@ -164,7 +164,6 @@ export class GridAssetsPlugin implements EarthEnginePlugin {
           outlineWidth: 1,
           // 10,000 km — disables terrain occlusion for near-side entities
           // but the globe still occludes far-side entities (Earth diameter ~12,742 km)
-          disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
         },
         label: label
           ? {
@@ -175,7 +174,6 @@ export class GridAssetsPlugin implements EarthEnginePlugin {
               outlineWidth: 2,
               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
               pixelOffset: new Cesium.Cartesian2(0, -10),
-              disableDepthTestDistance: new Cesium.ConstantProperty(10_000_000),
             }
           : undefined,
         properties: {

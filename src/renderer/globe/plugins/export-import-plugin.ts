@@ -262,7 +262,6 @@ export class ExportImportPlugin implements EarthEnginePlugin {
           color: new Cesium.ConstantProperty(color),
           outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
           outlineWidth: new Cesium.ConstantProperty(2),
-          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
         },
         label: {
           text: f.name,
@@ -272,7 +271,6 @@ export class ExportImportPlugin implements EarthEnginePlugin {
           outlineWidth: new Cesium.ConstantProperty(2),
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new Cesium.Cartesian2(0, -16),
-          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
         },
         properties: { description: f.description, folder: f.folder },
       } as any)

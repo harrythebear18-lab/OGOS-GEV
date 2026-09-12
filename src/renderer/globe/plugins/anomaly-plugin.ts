@@ -167,7 +167,6 @@ export class AnomalyPlugin implements EarthEnginePlugin {
         color: new Cesium.ConstantProperty(color),
         outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
         outlineWidth: new Cesium.ConstantProperty(2),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       label: {
         text: zone.type === 'depression' ? 'DEP' : 'PRO',
@@ -177,7 +176,6 @@ export class AnomalyPlugin implements EarthEnginePlugin {
         outlineWidth: new Cesium.ConstantProperty(2),
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         pixelOffset: new Cesium.Cartesian2(0, -14),
-        disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
       },
       properties: { type: zone.type, strength: zone.strength, sizeM: zone.sizeM },
     } as any)

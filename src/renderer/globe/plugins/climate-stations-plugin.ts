@@ -289,7 +289,6 @@ export class ClimateStationsPlugin implements EarthEnginePlugin {
           color,
           outlineColor: Cesium.Color.BLACK,
           outlineWidth: 1,
-          disableDepthTestDistance: 10_000_000,
         },
         label: labelOpts,
         properties: {

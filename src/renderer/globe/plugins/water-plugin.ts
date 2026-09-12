@@ -280,7 +280,6 @@ export class WaterPlugin implements EarthEnginePlugin {
           color: new Cesium.ConstantProperty(Cesium.Color.fromBytes(74, 255, 138, 255)),
           outlineColor: new Cesium.ConstantProperty(Cesium.Color.WHITE),
           outlineWidth: new Cesium.ConstantProperty(2),
-          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
         },
         label: f.name ? {
           text: f.name,
@@ -290,7 +289,6 @@ export class WaterPlugin implements EarthEnginePlugin {
           outlineWidth: new Cesium.ConstantProperty(2),
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new Cesium.Cartesian2(0, -14),
-          disableDepthTestDistance: new Cesium.ConstantProperty(Number.POSITIVE_INFINITY),
         } : undefined,
         properties: { type: f.type, name: f.name },
       } as any)
