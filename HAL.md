@@ -9,6 +9,95 @@ migration discussed across the build sessions.
 
 ---
 
+## 0. The Honest Assessment
+
+Before any HAL work was done, this was the real state of the codebase.
+
+### What was touching real silicon
+
+| Subsystem | What it actually does | Real? |
+|-----------|----------------------|:-----:|
+| Cesium rendering | WebGL/WebGPU via Chromium | ✓ real GPU |
+| CLIP server | CUDA via separate Python process | ✓ real GPU |
+| Ollama | GPU inference via separate process | ✓ real GPU |
+| OpenXR bridge | C++ N-API addon | real but unbuilt |
+
+### What was JavaScript busywork pretending to be optimization
+
+| Subsystem | What it actually did | Reality |
+|-----------|---------------------|---------|
+| GPU manager | `console.log('[gpu] render requested')` → returns null | stub |
+| DEM slope/hillshade/anomaly | Float32Array pixel-by-pixel for loops on main thread | pure JS, single core |
+| Runoff / priority flood | Uint8Array BFS loops | pure JS, single core |
+| Sentinel-2 band math | pure JS array math | pure JS, single core |
+| Prediction engine | pure JS math | pure JS, single core |
+| PNG decode (DEM, canopy) | pngjs pure JS decode | no hardware decode |
+| Tile cache I/O | `await res.arrayBuffer()` → buffers entire response in memory | no streaming, no mmap |
+| Live data parsing | `JSON.parse` on main thread | blocks event loop |
+| Worker threads | zero usage | no parallelism |
+| SharedArrayBuffer | zero usage | no zero-copy |
+| SIMD (AVX2/AVX-512) | zero usage | no vector units |
+| Hardware codecs (NVENC/QuickSync) | zero usage | no hardware video |
+| WebGPU compute | zero usage | no GPU compute |
+
+The "GPU manager" was literally a stub that logged to console and returned
+null. The DEM analysis was doing pixel-by-pixel JavaScript loops. Nothing
+touched vector units, nothing touched GPU compute, nothing used worker
+threads, nothing streamed I/O.
+
+### What touching actual silicon looks like in Electron 32
+
+Electron 32 ships Chromium 128, which gives real hardware access without
+native compilation in three critical areas:
+
+1. **WebGPU compute shaders** (renderer process)
+   - Real GPU compute — no native addon, no CUDA toolkit
+   - Available now: compute shaders for Sentinel-2 band math, DEM
+     hillshade/slope, NDVI/NDWI, anomaly detection
+   - Embarrassingly parallel pixel operations → GPU
+
+2. **Worker threads + SharedArrayBuffer** (main process)
+   - Real CPU parallelism via `worker_threads`
+   - Zero-copy data transfer via `SharedArrayBuffer` + `Atomics`
+   - Parallel DEM analysis, tile processing, prediction engine
+   - No native compilation needed
+
+3. **WebCodecs** (renderer process)
+   - Real hardware video encode/decode via `VideoEncoder`/`VideoDecoder`
+   - NVENC/QuickSync/VAAPI acceleration
+   - Satellite timelapses, screen capture for AI vision, export
+
+4. **Streaming I/O** (main process)
+   - Replace `await res.arrayBuffer()` with `ReadableStream` piping
+   - Real backpressure, real I/O overlap with compute
+   - No buffering entire responses in memory
+
+5. **WebAssembly SIMD** (either process)
+   - Real CPU SIMD (128-bit) without native compilation
+   - For bulk pixel math, DEM grid operations
+   - Cross-platform, no AVX2 detection needed
+
+The harder wins requiring native C++ addons (maximum performance, but
+compilation cost):
+
+6. **CUDA native addon** — maximum GPU compute for heavy workloads
+7. **AVX2/AVX-512 native addon** — 256/512-bit SIMD vs WASM's 128-bit
+8. **mmap native addon** — zero-copy file I/O for DEM grids, tile caches
+9. **NVENC native addon** — maximum video codec performance
+
+### GPU compute decision
+
+**Choice: C — WebGPU now, CUDA later.**
+
+Start with WebGPU, add CUDA bridge later for heavy workloads. WebGPU
+compute shaders in renderer — no native addon, works on any GPU
+(NVIDIA/AMD/Intel), available now in Electron 32. CUDA is deferred for
+heavier workloads (HyperForge integration, volumetric weather, wildfire
+spread, ocean dynamics, atmospheric particles, SAR fusion, terrain
+physics, large-scale prediction engines).
+
+---
+
 ## 1. The Vision
 
 The workstation must use **actual hardware capabilities** instead of
@@ -233,6 +322,22 @@ Hardware-accelerated video/image encode/decode via the WebCodecs API
 This is the critical distinction: **HAL scaffolding vs actual workload
 execution.** The HAL services were built first, then production
 workloads were migrated to use them.
+
+### Before HAL (the honest state)
+
+Every heavy workload was pure JavaScript running on the main process
+event loop — single core, no GPU, no vector units, no streaming:
+
+| Workload | Before HAL | Problem |
+|----------|-----------|---------|
+| DEM slope | Horn's method in JS `for` loops | Blocks event loop, single core |
+| DEM hillshade | Horn's method in JS `for` loops | Blocks event loop, single core |
+| Priority-Flood | Binary heap BFS in JS `while` loops | Blocks event loop, single core |
+| Anomaly detection | Box-blur + residuals in JS `for` loops | Blocks event loop, single core |
+| Sentinel-2 band math | Pure JS array math | Single core, no GPU |
+| PNG decode | pngjs pure JS decode | No hardware decode |
+| Tile/DEM fetches | `await res.arrayBuffer()` | Buffers entire response in memory |
+| Live data parsing | `JSON.parse` on main thread | Blocks event loop |
 
 ### Migrated to worker pool (CPU parallelism)
 
