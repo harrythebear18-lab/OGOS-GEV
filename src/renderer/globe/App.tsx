@@ -16,7 +16,7 @@ import WeatherOverlay from './WeatherOverlay'
 import PredictionPanel from './PredictionPanel'
 import IncidentPanel from './IncidentPanel'
 import NetworkGridPanel from './NetworkGridPanel'
-import PrivacyToggle from './PrivacyToggle'
+import PrivacyToggle, { type SecurityLevel, networkVisible as networkVisibleFor } from './PrivacyToggle'
 import ExplainabilityOverlay, { type Hypothesis } from './ExplainabilityOverlay'
 import AiPanel from './AiPanel'
 import { pluginManager } from './plugins'
@@ -62,7 +62,7 @@ export default function App() {
   const [showPredictions, setShowPredictions] = useState<boolean>(false)
   const [showIncident, setShowIncident] = useState<boolean>(false)
   const [showNetGrid, setShowNetGrid] = useState<boolean>(false)
-  const [privacyMode, setPrivacyMode] = useState<boolean>(true)
+  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>(0)
   const [lkpPin, setLkpPin] = useState<LngLat | null>(null)
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
 
@@ -199,8 +199,8 @@ export default function App() {
   // Sync global privacy state to the network plugin so it hides the
   // user-location node and connection arcs when privacy is ON.
   useEffect(() => {
-    networkPlugin.onControl('privacy', privacyMode)
-  }, [privacyMode])
+    networkPlugin.onControl('privacy', !networkVisibleFor(securityLevel))
+  }, [securityLevel])
 
   const allPlugins = pluginManager.getPlugins()
 
@@ -249,7 +249,7 @@ export default function App() {
         />
       }
       aiPanel={
-        <AiPanel viewer={viewer} onHypothesesChange={setHypotheses} privacyMode={privacyMode} />
+        <AiPanel viewer={viewer} onHypothesesChange={setHypotheses} securityLevel={securityLevel} />
       }
       statusBar={
         <MemoStatusBar
@@ -313,7 +313,7 @@ export default function App() {
         position: 'absolute', top: 60, right: 12, zIndex: 200,
         display: 'flex', gap: 4, alignItems: 'center',
       }}>
-        <PrivacyToggle onChange={setPrivacyMode} />
+        <PrivacyToggle onChange={setSecurityLevel} />
         <ToolbarBtn label="INTEGRITY" color="#4a9eff" active={showIntegrity} onClick={() => { setShowIntegrity(!showIntegrity); setShowWeather(false); setShowPredictions(false); setShowIncident(false); setShowNetGrid(false) }} />
         <ToolbarBtn label="WEATHER" color="#4affd4" active={showWeather} onClick={() => { setShowWeather(!showWeather); setShowIntegrity(false); setShowPredictions(false); setShowIncident(false); setShowNetGrid(false) }} />
         <ToolbarBtn label="PREDICT" color="#a04aff" active={showPredictions} onClick={() => { setShowPredictions(!showPredictions); setShowIntegrity(false); setShowWeather(false); setShowIncident(false); setShowNetGrid(false) }} />
@@ -376,7 +376,7 @@ export default function App() {
       {/* Network/Grid operational panel */}
       {showNetGrid && (
         <div style={{ position: 'absolute', top: 88, right: 12, zIndex: 200 }}>
-          <NetworkGridPanel privacyMode={privacyMode} />
+          <NetworkGridPanel privacyMode={!networkVisibleFor(securityLevel)} />
         </div>
       )}
 

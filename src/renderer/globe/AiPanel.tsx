@@ -33,10 +33,10 @@ interface Hypothesis {
 interface AiPanelProps {
   viewer: Cesium.Viewer | null
   onHypothesesChange?: (hypotheses: Hypothesis[]) => void
-  privacyMode?: boolean
+  securityLevel?: number
 }
 
-export default function AiPanel({ viewer, onHypothesesChange, privacyMode }: AiPanelProps) {
+export default function AiPanel({ viewer, onHypothesesChange, securityLevel }: AiPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -167,7 +167,7 @@ export default function AiPanel({ viewer, onHypothesesChange, privacyMode }: AiP
     setStreamingText('')
 
     try {
-      const result = await window.api.ai.chat(sessionId, userText, { model: model || undefined, mode: analysisMode, privacyMode: privacyMode ?? true })
+      const result = await window.api.ai.chat(sessionId, userText, { model: model || undefined, mode: analysisMode, securityLevel: securityLevel ?? 0 })
       // The stream handler will add the assistant message via 'done' event
       // But if streaming didn't produce tokens, add the result here
       if (result?.error) {
@@ -194,7 +194,7 @@ export default function AiPanel({ viewer, onHypothesesChange, privacyMode }: AiP
       const canvas = viewer.canvas as HTMLCanvasElement
       const dataUrl = canvas.toDataURL('image/png')
 
-      const result = await window.api.ai.chat(sessionId, userText, { image: dataUrl, model: model || undefined, mode: analysisMode, privacyMode: privacyMode ?? true })
+      const result = await window.api.ai.chat(sessionId, userText, { image: dataUrl, model: model || undefined, mode: analysisMode, securityLevel: securityLevel ?? 0 })
       if (result?.error) {
         setMessages((m) => [...m, { id: nextId(), role: 'assistant', content: result.error || 'Unknown error', error: true }])
         setLoading(false)
@@ -232,7 +232,7 @@ For each, provide:
 - suggestedZones: array of { label, confidence (0-100), coords: [{lng,lat},...], reasons: [string] }
 
 Format as JSON array. Use approximate viewport coordinates for zone polygons.`
-      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined, mode: analysisMode, privacyMode: privacyMode ?? true }) as { response?: string; error?: string }
+      const result = await window.api.ai.chat(sessionId, prompt, { model: model || undefined, mode: analysisMode, securityLevel: securityLevel ?? 0 }) as { response?: string; error?: string }
 
       if (result?.error) {
         console.warn('[AiPanel] hypothesis generation failed:', result.error)

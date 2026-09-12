@@ -79,7 +79,7 @@ declare global {
         createSession: () => Promise<{ sessionId: string; model: string; visionModel: string }>
         destroySession: (sessionId: string) => Promise<{ ok: boolean }>
         getSession: (sessionId: string) => Promise<{ sessionId: string; model: string; visionModel: string; messageCount: number; streaming: boolean } | { error: string }>
-        chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research'; privacyMode?: boolean }) => Promise<{ content: string; error?: string }>
+        chat: (sessionId: string, prompt: string, opts?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research'; securityLevel?: number }) => Promise<{ content: string; error?: string }>
         vision: (prompt: string, image: string, model?: string) => Promise<{ content: string; error?: string }>
         registerTools: (tools: unknown[]) => Promise<{ count: number }>
         resolveTool: (callId: string, result: unknown) => Promise<{ ok: boolean }>
@@ -88,7 +88,7 @@ declare global {
         chatLegacy: (prompt: string, model?: string, context?: string) => Promise<{ content: string; model: string; error?: string }>
         clipHealth: () => Promise<{ running: boolean; model?: string }>
         clipSearch: (query: string, bounds?: unknown) => Promise<{ results: any[]; error?: string }>
-        webSearch: (query: string, limit?: number, privacyMode?: boolean) => Promise<{ results: any[] }>
+        webSearch: (query: string, limit?: number, securityLevel?: number) => Promise<{ results: any[] }>
       }
 
       files: {

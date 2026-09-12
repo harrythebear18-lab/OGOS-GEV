@@ -1,21 +1,41 @@
-AI + web search respect privacy mode — user is locationless when privacy ON
+4-stage security system + randomized confirmation words + stage-aware warnings
 
-When privacy mode is ON:
-- AI system prompt includes strict PRIVACY MODE rules:
-  - Never say "your location", "you are near", "from your position"
-  - User is LOCATIONLESS — viewport is a region being ANALYZED, not where they ARE
-  - Refer to viewport as "the selected region", not "your area"
-  - Still answers questions about the region but frames as analysis, not identity
-  - If user asks "where am I", responds that privacy mode is on
-- Scene context JSON is coarsened to ~1 degree (~111km) resolution
-- Location description shows "approx region near X°, Y° (coarsened for privacy)"
-- Reverse geocode (place name lookup) is skipped entirely
-- Web search tool handler coarsens location to whole degrees
-- Web search IPC handler coarsens location when privacyMode flag is passed
+Replaces single privacyMode boolean with 4-stage tiered security:
 
-Privacy mode flows through:
-  PrivacyToggle → App.tsx → AiPanel → ai.chat({privacyMode}) → IPC → chatWithTools({privacyMode})
-  → system prompt + context coarsening + web search tool coarsening
+Stage 0: 🔒 LOCK    — everything hidden, AI uses coarse region (~1°/~111km), no reverse geocode, no exact coords, no network
+Stage 1: 🧠 AI      — network still locked, location still locked, AI gets finer regional context (~0.1°/~11km), still no exact, no "your location" phrasing
+Stage 2: ⚡ FULL    — network still locked, identity hidden, location hidden, AI gets exact bbox/coords, reverse geocode allowed, full OSINT precision
+Stage 3: 🔓 NET     — everything visible: IP, ISP, DNS, GeoIP, connection arcs, user-location node, full OSINT, full AI, full web search
+
+Network data (user node, IP, ISP, DNS, connections) is the most sensitive —
+reveals local/home network and I/O from all public endpoints.
+Unlocked LAST at stage 3.
+
+Randomized confirmation words prevent muscle-memory doxing:
+- Stages 1-2: ENABLE, GRANT, APPROVE, ACCEPT, AFFIRM, CONFIRM, LIFT
+- Stage 3 (network): BREAK SEAL, ESCALATE, ELEVATE, OPEN GATE, I INTEND,
+  I ACCEPT RISK, I'M CERTAIN
+
+Stage-aware warning severity:
+- Stages 0-1: blue/calm dialog, "No personal data is exposed at this stage"
+- Stages 2-3: red warning, "this will expose your personal data"
+
+Each advance requires: type randomized word → final warning dialog with
+Cancel/OK. Locking back down (any stage → 0) is immediate.
+
+Coarsening precision per stage:
+- Stage 0: ~1 degree (~111km)
+- Stage 1: ~0.1 degree (~11km)
+- Stage 2+: exact coordinates
+
+AI system prompt adapts per stage:
+- Stages 0-1: PRIVACY MODE rules — user is LOCATIONLESS, "the selected region"
+- Stage 2+: AI can reference "your location", exact coords
+- Stage 3: everything unlocked
+
+Flow: SecurityToggle → App.tsx → AiPanel → ai.chat({securityLevel}) → IPC →
+chatWithTools({securityLevel}) → system prompt + context coarsening +
+web search coarsening
 
 Generated with [Devin](https://devin.ai)
 

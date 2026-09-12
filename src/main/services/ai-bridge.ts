@@ -116,9 +116,14 @@ const WEB_SEARCH_TOOL: ToolDefinition = {
 
 // Track current session's privacy mode so tool handlers can respect it
 let currentPrivacyMode = false
+let currentSecurityLevel = 0
 
 export function getCurrentPrivacyMode(): boolean {
   return currentPrivacyMode
+}
+
+export function getCurrentSecurityLevel(): number {
+  return currentSecurityLevel
 }
 
 async function handleWebSearch(args: Record<string, unknown>): Promise<unknown> {
@@ -131,9 +136,13 @@ async function handleWebSearch(args: Record<string, unknown>): Promise<unknown> 
     ? { lng: (ctx.bbox.west + ctx.bbox.east) / 2, lat: (ctx.bbox.south + ctx.bbox.north) / 2 }
     : ctx.lkp ?? ctx.camera?.center ?? undefined
 
-  // Coarsen location if privacy mode is on
-  if (currentPrivacyMode && location) {
-    location = { lng: Math.round(location.lng), lat: Math.round(location.lat) }
+  // Coarsen location based on security level: stage 0 = ~1°, stage 1 = ~0.1°, stage 2+ = exact
+  if (currentSecurityLevel < 2 && location) {
+    const precision = currentSecurityLevel === 0 ? 1.0 : 0.1
+    location = {
+      lng: Math.round(location.lng / precision) * precision,
+      lat: Math.round(location.lat / precision) * precision,
+    }
   }
 
   const results = await webSearch({ query, limit }, location)
@@ -211,7 +220,7 @@ function streamError(sessionId: string, error: string): void {
 export async function chatWithTools(
   sessionId: string,
   userMessage: string,
-  options?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research'; privacyMode?: boolean }
+  options?: { image?: string; model?: string; mode?: 'active-sar' | 'legacy-research'; securityLevel?: number }
 ): Promise<{ content: string; error?: string }> {
   const session = getSession(sessionId)
   if (!session) return { content: '', error: 'Session not found' }
@@ -223,9 +232,13 @@ export async function chatWithTools(
   session.streaming = true
   const mode = options?.mode || 'active-sar'
   const isActiveSAR = mode === 'active-sar'
-  const privacy = options?.privacyMode ?? false
+  const securityLevel = options?.securityLevel ?? 0
+  const privacy = securityLevel < 2 // stages 0-1 = privacy mode (coarsened)
+  const locationless = securityLevel < 2 // stages 0-1 = AI treats user as locationless
+  const exactCoords = securityLevel >= 2 // stage 2+ = exact coords
   session.privacyMode = privacy
   currentPrivacyMode = privacy
+  currentSecurityLevel = securityLevel
 
   try {
     // Build system prompt with current scene context (bbox-aware)
@@ -234,9 +247,13 @@ export async function chatWithTools(
     const toolNames = tools.map((t) => t.function.name).join(', ')
 
     // Build a human-readable location description from the bbox
+    // 3-tier coarsening: stage 0 = ~1° (~111km), stage 1 = ~0.1° (~11km), stage 2+ = exact
     let locationDesc = 'Location: unknown'
     let bboxDesc = 'Viewport bbox: not available'
     let placeName: string | null = null
+
+    const coarsePrecision = securityLevel === 0 ? 1.0 : securityLevel === 1 ? 0.1 : 0
+    const isCoarsened = coarsePrecision > 0
 
     if (ctx.bbox) {
       const b = ctx.bbox
@@ -246,19 +263,20 @@ export async function chatWithTools(
       const heightDeg = b.north - b.south
       const approxKm = Math.max(widthDeg, heightDeg) * 111
 
-      if (privacy) {
-        // Privacy ON — coarsen coordinates to ~1 degree (~111km) and skip reverse geocode
-        const coarseLat = Math.round(centerLat)
-        const coarseLng = Math.round(centerLng)
-        bboxDesc = `Viewport bbox: approx ${coarseLng - 1}° to ${coarseLng + 1}°, ${coarseLat - 1}° to ${coarseLat + 1}°`
-        locationDesc = `Location: approx region near ${coarseLat}°, ${coarseLng}° (coarsened for privacy)`
-        placeName = null
+      if (isCoarsened) {
+        // Coarsen coordinates to the precision for this stage
+        const coarseLat = Math.round(centerLat / coarsePrecision) * coarsePrecision
+        const coarseLng = Math.round(centerLng / coarsePrecision) * coarsePrecision
+        const half = coarsePrecision
+        bboxDesc = `Viewport bbox: approx ${coarseLng - half}° to ${coarseLng + half}°, ${coarseLat - half}° to ${coarseLat + half}°`
+        locationDesc = `Location: approx region near ${coarseLat}°, ${coarseLng}° (coarsened for privacy, ~${(coarsePrecision * 111).toFixed(0)}km precision)`
+        placeName = null // No reverse geocode when coarsened
       } else {
         bboxDesc = `Viewport bbox: ${b.west.toFixed(3)}, ${b.south.toFixed(3)} to ${b.east.toFixed(3)}, ${b.north.toFixed(3)}
 Viewport center: ${centerLng.toFixed(4)}, ${centerLat.toFixed(4)}
 Viewport size: ~${widthDeg.toFixed(2)}° × ${heightDeg.toFixed(2)}° (~${approxKm.toFixed(0)} km)`
 
-        // Try reverse geocode for a human-readable place name
+        // Reverse geocode allowed at stage 2+
         try {
           placeName = await reverseGeocode(centerLng, centerLat)
         } catch {
@@ -270,35 +288,36 @@ Viewport size: ~${widthDeg.toFixed(2)}° × ${heightDeg.toFixed(2)}° (~${approx
           : `Location: center at ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)}`
       }
     } else if (ctx.camera?.center) {
-      if (privacy) {
-        locationDesc = `Location: approx region (coarsened for privacy)`
+      if (isCoarsened) {
+        locationDesc = `Location: approx region (coarsened for privacy, ~${(coarsePrecision * 111).toFixed(0)}km precision)`
       } else {
         locationDesc = `Location: camera at ${ctx.camera.center.lat.toFixed(4)}, ${ctx.camera.center.lng.toFixed(4)} (height: ${ctx.camera.height.toFixed(0)}m)`
       }
     }
 
-    // Coarsen scene context JSON when privacy is on — strip exact coordinates
+    // Coarsen scene context JSON when below stage 2 — strip exact coordinates
     let ctxStr: string
-    if (privacy) {
+    if (isCoarsened) {
       const coarsened = { ...ctx }
       if (coarsened.bbox) {
-        const cLat = Math.round((coarsened.bbox.south + coarsened.bbox.north) / 2)
-        const cLng = Math.round((coarsened.bbox.west + coarsened.bbox.east) / 2)
-        coarsened.bbox = { west: cLng - 1, south: cLat - 1, east: cLng + 1, north: cLat + 1 }
+        const cLat = Math.round(((coarsened.bbox.south + coarsened.bbox.north) / 2) / coarsePrecision) * coarsePrecision
+        const cLng = Math.round(((coarsened.bbox.west + coarsened.bbox.east) / 2) / coarsePrecision) * coarsePrecision
+        const half = coarsePrecision
+        coarsened.bbox = { west: cLng - half, south: cLat - half, east: cLng + half, north: cLat + half }
       }
       if (coarsened.camera?.center) {
         coarsened.camera = {
           ...coarsened.camera,
           center: {
-            lat: Math.round(coarsened.camera.center.lat),
-            lng: Math.round(coarsened.camera.center.lng),
+            lat: Math.round(coarsened.camera.center.lat / coarsePrecision) * coarsePrecision,
+            lng: Math.round(coarsened.camera.center.lng / coarsePrecision) * coarsePrecision,
           },
         }
       }
       if (coarsened.lkp) {
         coarsened.lkp = {
-          lat: Math.round(coarsened.lkp.lat),
-          lng: Math.round(coarsened.lkp.lng),
+          lat: Math.round(coarsened.lkp.lat / coarsePrecision) * coarsePrecision,
+          lng: Math.round(coarsened.lkp.lng / coarsePrecision) * coarsePrecision,
         }
       }
       ctxStr = JSON.stringify(coarsened, null, 2)
@@ -349,9 +368,9 @@ ${placeName ? `Place name: ${placeName}` : ''}
 ${bboxDesc}
 
 ${reasoningStyle}
-${privacy ? `
+${locationless ? `
 ## PRIVACY MODE — STRICT RULES
-The user has privacy mode enabled. You MUST follow these rules absolutely:
+The user is in ${securityLevel === 0 ? 'LOCK' : 'AI'} security stage. You MUST follow these rules absolutely:
 - NEVER say "your location", "you are near", "from your position", "the area you're looking at is close to", or any phrase that implies the user is at or near the viewport location.
 - The user is LOCATIONLESS. The viewport is a region they are ANALYZING, not where they ARE.
 - Refer to the viewport as "the selected region", "the analysis area", "this region", or "the area in view" — never as "your area" or "where you are".
@@ -360,7 +379,7 @@ The user has privacy mode enabled. You MUST follow these rules absolutely:
 - Example WRONG: "You are looking at northeast Brazil." or "Your location is near..."
 - Do NOT infer or guess the user's actual location from the viewport, LKP, or camera position.
 - If the user asks "where am I", respond that privacy mode is on and you cannot determine their location.
-` : ''}
+${securityLevel === 1 ? '- You have FINER regional context (~11km precision) but still NO exact coordinates. Do not reveal precise coordinates in your responses.\n' : ''}` : ''}
 Full scene context:
 ${ctxStr}
 

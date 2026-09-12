@@ -319,7 +319,7 @@ export default function NetworkGridPanel({ privacyMode = true }: { privacyMode?:
         <div style={panelStyle.row}>
           <span style={panelStyle.label}>Public IP</span>
           <span style={panelStyle.valueSmall}>
-            {privacyMode ? maskIP(netVpn.publicIP, true) : netVpn.publicIP}
+            {privacyMode ? maskIP(netVpn.publicIP, 0, 3) : netVpn.publicIP}
           </span>
         </div>
       )}
