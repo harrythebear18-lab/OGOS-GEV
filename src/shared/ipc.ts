@@ -152,6 +152,10 @@ export const IPC = {
 
   // Compute dispatcher (HAL backend selection)
   COMPUTE_TASK: 'compute:task',
+
+  // Image decode bridge (main → renderer WebCodecs)
+  IMAGE_DECODE_REQUEST: 'image:decode-request',
+  IMAGE_DECODE_RESPONSE: 'image:decode-response',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

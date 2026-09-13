@@ -219,6 +219,8 @@ over NVIDIA-only CUDA for the initial implementation.
 | `hal:stream:progress` | Progress event for streaming downloads |
 | `compute:task` | Compute dispatcher — routes to WebGPU or CPU worker |
 | `terrain:dem:raw` | Raw DEM grid data for renderer-side compute |
+| `image:decode-request` | Main → renderer: ask WebCodecs to decode PNG/JPEG |
+| `image:decode-response` | Renderer → main: decoded RGBA pixel data |
 
 ---
 
@@ -401,7 +403,7 @@ All three fall back to inline JS loops if the worker pool is unavailable.
 |----------|--------|--------|
 | DEM hillshade (renderer) | WebGPU `dem-hillshade` kernel | Contract ready via dispatcher, no plugin built yet |
 | Sentinel-2 NDVI/NDWI/NBR | WebGPU `ndvi`/`ndwi`/`nbr` kernels | Contract ready via dispatcher, no plugin built yet |
-| PNG decode (main process) | WebCodecs ImageDecoder | WebCodecs in renderer, pngjs in main — needs IPC bridge |
+| PNG decode (DEM, canopy) | WebCodecs ImageDecoder via bridge | **wired** — main sends bytes → renderer decodes → pngjs fallback |
 | Video timelapse export | WebCodecs VideoEncoder | Service ready, not wired to export |
 | AI vision frame capture | WebCodecs VideoFrame | Service ready, not wired to AI bridge |
 | WASM SIMD vector math | WASM SIMD module | Not built |
@@ -509,9 +511,11 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [ ] Migrate vector math (haversine, projections, stats) to SIMD
 - [ ] Benchmark SIMD vs scalar
 
-### Phase 5 — Pending (WebCodecs adoption)
+### Phase 5 — In Progress (WebCodecs adoption)
 
-- [ ] Bridge PNG decode from main process to renderer WebCodecs
+- [x] Bridge PNG decode from main process to renderer WebCodecs
+- [x] Wire DEM Terrarium PNG decode through WebCodecs (pngjs fallback)
+- [x] Wire canopy GIBS NDVI PNG decode through WebCodecs (pngjs fallback)
 - [ ] Wire video timelapse export to WebCodecs VideoEncoder
 - [ ] Wire AI vision frame capture to WebCodecs VideoFrame
 - [ ] Wire drone footage frame extraction to WebCodecs VideoDecoder

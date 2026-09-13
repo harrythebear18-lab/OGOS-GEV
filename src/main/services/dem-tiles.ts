@@ -59,6 +59,33 @@ async function fetchTilePng(z: number, x: number, y: number): Promise<Buffer | n
 }
 
 async function decodeTerrariumPng(pngBuf: Buffer): Promise<number[][]> {
+  // Try WebCodecs hardware decode via renderer bridge first
+  try {
+    const { decodeImageViaRenderer } = await import('./image-decode-bridge')
+    const decoded = await decodeImageViaRenderer(pngBuf, 'image/png')
+    if (decoded && decoded.data.length > 0) {
+      const { data, width, height } = decoded
+      const grid: number[][] = []
+      for (let y = 0; y < height; y++) {
+        const row: number[] = []
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4
+          const r = data[idx]
+          const g = data[idx + 1]
+          const b = data[idx + 2]
+          const elev = r * 256 + g + b / 256 - 32768
+          row.push(elev)
+        }
+        grid.push(row)
+      }
+      console.log(`[dem] decoded ${width}x${height} Terrarium PNG via WebCodecs hardware`)
+      return grid
+    }
+  } catch {
+    // Bridge not ready or unavailable — fall through to pngjs
+  }
+
+  // Fallback: pngjs pure JS decode
   const { PNG } = await import('pngjs')
   const png = PNG.sync.read(pngBuf)
   const { width, height, data } = png

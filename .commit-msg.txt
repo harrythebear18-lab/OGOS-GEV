@@ -1,20 +1,28 @@
-Wire compute dispatcher — WebGPU slope/anomaly now touch real GPU
+Wire PNG decode through WebCodecs — hardware image decode via main→renderer bridge
 
-Define a single compute contract (src/shared/compute-contract.ts):
-  task in → buffer out → backend tagged
+WebCodecs ImageDecoder only exists in the renderer, but PNG decoding
+for DEM Terrarium tiles and GIBS NDVI canopy tiles happens in the main
+process (pngjs pure JS decode).
 
-Renderer compute dispatcher routes to best backend:
-  1. WebGPU kernel (if available + grid ≥ 128x128)
-  2. CPU worker pool via IPC (fallback)
-  3. noop (caller falls back to legacy IPC)
+Add image decode bridge:
+  Main process sends raw PNG bytes → renderer decodes with WebCodecs
+  → sends back RGBA pixel data → main process extracts elevation/NDVI
 
-Main-process compute fallback handles compute:task IPC → worker pool.
+Flow:
+  dem-tiles.ts / canopy-service.ts
+    → decodeImageViaRenderer(bytes, 'image/png')
+    → webContents.send('image:decode-request', { id, bytes })
+    → renderer: webCodecs.decodeImageFromBytes(bytes)
+    → ipcRenderer.send('image:decode-response', { id, data })
+    → main: resolves promise with decoded pixels
+  Falls back to pngjs if bridge unavailable or times out (5s).
 
-Wire slope plugin to dispatcher (WebGPU dem-slope → worker → legacy IPC).
-Wire anomaly plugin to dispatcher (WebGPU anomaly → worker → legacy IPC).
-Add terrain:dem:raw IPC for raw DEM grid data to renderer.
-Remove dead gpu-manager.ts stub.
-Update HAL.md + README truth tables.
+Files:
+  src/main/services/image-decode-bridge.ts — main-side bridge
+  src/renderer/globe/hal/webcodecs.ts — decodeImageFromBytes method
+  src/renderer/globe/hal/index.ts — wire decode-request listener
+  src/main/services/dem-tiles.ts — try WebCodecs first, pngjs fallback
+  src/main/services/canopy-service.ts — try WebCodecs first, pngjs fallback
 
 Generated with [Devin](https://devin.ai)
 

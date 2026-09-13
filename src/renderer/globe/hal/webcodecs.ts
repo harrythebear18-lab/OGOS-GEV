@@ -86,6 +86,30 @@ class WebCodecsService {
     }
   }
 
+  /**
+   * Decode a PNG/JPEG image from raw bytes (Uint8Array).
+   * Used by the main→renderer image decode bridge — main process sends
+   * raw PNG bytes via IPC, renderer decodes with WebCodecs hardware.
+   *
+   * Returns RGBA pixel data as a plain array (IPC-serializable).
+   */
+  async decodeImageFromBytes(
+    bytes: Uint8Array,
+    format: 'image/png' | 'image/jpeg',
+  ): Promise<{ data: number[]; width: number; height: number; durationMs: number }> {
+    // Copy to a regular ArrayBuffer to avoid SharedArrayBuffer type issues with Blob
+    const ab = new ArrayBuffer(bytes.byteLength)
+    new Uint8Array(ab).set(bytes)
+    const blob = new Blob([ab], { type: format })
+    const result = await this.decodeImage(blob, format)
+    return {
+      data: Array.from(result.data),
+      width: result.width,
+      height: result.height,
+      durationMs: result.durationMs,
+    }
+  }
+
   /** Fallback using createImageBitmap (still hardware-accelerated in Chromium) */
   private async decodeImageFallback(blob: Blob, _format: string): Promise<DecodeResult> {
     const start = performance.now()

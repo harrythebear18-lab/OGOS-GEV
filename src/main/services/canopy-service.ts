@@ -51,24 +51,46 @@ async function fetchNdviTile(
       const buf = await streamingIO.fetchToBuffer(url, { timeoutMs: 15000 })
       if (!buf || buf.length < 100) continue
 
-      const { PNG } = await import('pngjs')
-      const png = PNG.sync.read(buf)
+      // Try WebCodecs hardware decode via renderer bridge
+      let pixelData: Uint8Array | null = null
+      let pngWidth = 0
+      let pngHeight = 0
+      try {
+        const { decodeImageViaRenderer } = await import('./image-decode-bridge')
+        const decoded = await decodeImageViaRenderer(buf, 'image/png')
+        if (decoded && decoded.data.length > 0) {
+          pixelData = decoded.data
+          pngWidth = decoded.width
+          pngHeight = decoded.height
+        }
+      } catch {
+        // Bridge not ready — fall through to pngjs
+      }
 
-      // Build NDVI grid from the PNG
+      if (!pixelData) {
+        // Fallback: pngjs pure JS decode
+        const { PNG } = await import('pngjs')
+        const png = PNG.sync.read(buf)
+        pixelData = png.data as unknown as Uint8Array
+        pngWidth = png.width
+        pngHeight = png.height
+      }
+
+      // Build NDVI grid from the decoded pixels
       // GIBS NDVI palette: dark brown (low) → green (high)
       // We approximate NDVI from the green/red ratio
       const ndviGrid: (number | null)[][] = []
       for (let y = 0; y < height; y++) {
         const row: (number | null)[] = []
         // Map our grid coords to the PNG pixels
-        const py = Math.min(reqHeight - 1, Math.floor((y / height) * reqHeight))
+        const py = Math.min(pngHeight - 1, Math.floor((y / height) * pngHeight))
         for (let x = 0; x < width; x++) {
-          const px = Math.min(reqWidth - 1, Math.floor((x / width) * reqWidth))
-          const idx = (py * reqWidth + px) * 4
-          const r = png.data[idx]
-          const g = png.data[idx + 1]
-          const b = png.data[idx + 2]
-          const a = png.data[idx + 3]
+          const px = Math.min(pngWidth - 1, Math.floor((x / width) * pngWidth))
+          const idx = (py * pngWidth + px) * 4
+          const r = pixelData[idx]
+          const g = pixelData[idx + 1]
+          const b = pixelData[idx + 2]
+          const a = pixelData[idx + 3]
 
           if (a < 10) {
             row.push(null)

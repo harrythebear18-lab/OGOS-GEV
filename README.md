@@ -51,7 +51,7 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **UI:** React 18 + TypeScript
 - **3D globe:** CesiumJS
 - **GPU compute:** WebGPU (7 WGSL compute kernels — wired to slope/anomaly via compute dispatcher)
-- **Hardware codecs:** WebCodecs (ImageDecoder, VideoEncoder/Decoder probed — not yet wired to production)
+- **Hardware codecs:** WebCodecs (ImageDecoder wired to PNG decode via bridge, VideoEncoder/Decoder probed — not yet wired to production)
 - **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool — wired to DEM slope/runoff/anomaly, fallback for compute dispatcher)
 - **Streaming I/O:** ReadableStream pipelines with backpressure (wired to DEM/canopy/tile fetches)
 - **SGP4 / orbital math:** `satellite.js`
@@ -71,7 +71,7 @@ the full picture.
 | WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | **wired** (slope, anomaly via compute dispatcher) |
 | Worker threads | OS threads via worker_threads + SharedArrayBuffer | **wired** (slope, runoff, anomaly, dispatcher fallback) |
 | Streaming I/O | ReadableStream backpressure | **wired** (DEM, canopy, tile cache) |
-| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | probed, **not wired to production** |
+| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | **wired** (PNG decode via bridge, video pending) |
 | WASM SIMD | 128-bit CPU vector units | probed, **no module built** |
 | CUDA native | NVIDIA GPU compute (heavy workloads) | deferred |
 | OpenXR native | Meta Quest 3S PC Link | scaffold (unbuilt) |
@@ -97,7 +97,7 @@ HAL probes on startup:
 | Tile cache fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
 | DEM hillshade | worker (`dem-hillshade.worker.js`) | contract ready, **plugin not built** |
 | WebGPU band math (NDVI/NDWI/NBR) | WebGPU kernels | contract ready, **plugin not built** |
-| WebCodecs image decode | ImageDecoder | probed, **not called** |
+| WebCodecs image decode | ImageDecoder via main→renderer bridge | ✅ wired (DEM + canopy PNG) |
 | WebCodecs video encode | VideoEncoder | probed, **not called** |
 
 ## Licensing — Visentrix Three-Layer Model

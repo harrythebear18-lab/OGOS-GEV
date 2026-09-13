@@ -3,6 +3,7 @@ import { join } from 'path'
 import os from 'node:os'
 import { registerIpcHandlers } from './ipc-handlers'
 import { registerWindow } from './windows'
+import { initImageDecodeBridge } from './services/image-decode-bridge'
 import { liveData } from './services/live/live-data'
 import { climateMonitor } from './services/climate/climate-monitor'
 import { predictionEngine } from './services/prediction/prediction-engine'
@@ -125,6 +126,10 @@ function createCockpitWindow(): BrowserWindow {
 
   registerWindow(win.webContents)
   console.log('[main] window registered')
+
+  // Initialize image decode bridge — main process can now ask renderer
+  // to decode PNG/JPEG via WebCodecs hardware
+  initImageDecodeBridge()
 
   return win
 }
