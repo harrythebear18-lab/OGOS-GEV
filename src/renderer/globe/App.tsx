@@ -75,7 +75,13 @@ export default function App() {
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
 
   // ── Entity Info Box ──
-  const [pickedEntity, setPickedEntity] = useState<PickedEntity | null>(null)
+  const [pickedEntity, setPickedEntityState] = useState<PickedEntity | null>(null)
+
+  // Wrap setPickedEntity to also update scene context (so AI can see what user picked)
+  const setPickedEntity = (entity: PickedEntity | null) => {
+    setPickedEntityState(entity)
+    window.api.scene.set({ selectedFeature: entity })
+  }
 
   // ── Plugin state ──
   const [activePlugins, setActivePlugins] = useState<Set<string>>(new Set())

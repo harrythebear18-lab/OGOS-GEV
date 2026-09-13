@@ -26,6 +26,7 @@ export interface ActionRunnerBindings {
   getViewContext: () => { center: LngLat; viewRadiusKm: number }
   getBbox?: () => { west: number; south: number; east: number; north: number } | null
   setSelection?: (bbox: { west: number; south: number; east: number; north: number }) => void
+  worldOverlay?: import('../WorldOverlay').WorldOverlay
 }
 
 const LAYER_ALIASES: Record<string, string> = {
@@ -52,7 +53,7 @@ export function createActionRunner(bindings: ActionRunnerBindings): {
   getTools: () => any[]
   getAnalyst: () => AnalystEngine
 } {
-  const { viewer, pluginManager, getLiveFeatures, getViewContext, getBbox, setSelection } = bindings
+  const { viewer, pluginManager, getLiveFeatures, getViewContext, getBbox, setSelection, worldOverlay } = bindings
 
   const analystProviders: AnalystProviders = {
     getRecords: (layerKey) => getLiveFeatures(layerKey) || [],
@@ -186,7 +187,292 @@ export function createActionRunner(bindings: ActionRunnerBindings): {
           }
         }
 
+        case 'whats_in_view': {
+          // Return a structured list of all visible entities with screen coordinates
+          const maxResults = Number(args.limit) || 50
+          const includeScreen = Boolean(args.includeScreenCoords ?? true)
+          const canvas = viewer.canvas
+          const viewWidth = canvas.width
+          const viewHeight = canvas.height
+
+          interface VisibleItem {
+            id: string
+            type: string
+            label: string
+            lat: number
+            lon: number
+            height?: number
+            screenX?: number
+            screenY?: number
+            distanceKm?: number
+          }
+
+          const items: VisibleItem[] = []
+          const cameraPos = viewer.camera.positionCartographic
+          const camCartesian = viewer.camera.position
+
+          // Check all entities in the viewer's entity collection
+          const entities = viewer.entities.values
+          for (const entity of entities) {
+            if (items.length >= maxResults) break
+
+            // Skip AI-created annotations
+            if (typeof entity.id === 'string' && entity.id.startsWith('ai-')) continue
+
+            let position: Cesium.Cartesian3 | undefined
+            try {
+              position = entity.position?.getValue(Cesium.JulianDate.now())
+            } catch { continue }
+            if (!position) continue
+
+            // Check if entity is in front of the globe (not occluded)
+            const screenPos = viewer.scene.cartesianToCanvasCoordinates(position)
+            if (!screenPos) continue
+
+            // Check if within viewport bounds
+            if (screenPos.x < 0 || screenPos.x > viewWidth || screenPos.y < 0 || screenPos.y > viewHeight) continue
+
+            // Convert to geographic coords
+            let carto: Cesium.Cartographic
+            try {
+              carto = Cesium.Cartographic.fromCartesian(position)
+            } catch { continue }
+
+            const lng = Cesium.Math.toDegrees(carto.longitude)
+            const lat = Cesium.Math.toDegrees(carto.latitude)
+            const height = carto.height
+
+            // Calculate distance from camera
+            const distance = Cesium.Cartesian3.distance(position, camCartesian)
+            const distanceKm = distance / 1000
+
+            // Get label from entity
+            let label = entity.id
+            if (entity.label?.text) {
+              try {
+                const text = entity.label.text.getValue(Cesium.JulianDate.now())
+                if (text) label = text
+              } catch { /* use id */ }
+            }
+
+            const item: VisibleItem = {
+              id: String(entity.id),
+              type: 'entity',
+              label,
+              lat,
+              lon: lng,
+              height,
+              distanceKm: Math.round(distanceKm * 10) / 10,
+            }
+
+            if (includeScreen) {
+              item.screenX = Math.round(screenPos.x)
+              item.screenY = Math.round(screenPos.y)
+            }
+
+            items.push(item)
+          }
+
+          // Also check live features from active layers
+          for (const layer of Array.from((pluginManager as any).activePlugins as Set<string>)) {
+            if (items.length >= maxResults) break
+            const features = getLiveFeatures(layer)
+            if (!features) continue
+
+            for (const f of features) {
+              if (items.length >= maxResults) break
+              if (!f.lat && !f.latitude) continue
+
+              const lat = f.lat ?? f.latitude
+              const lng = f.lon ?? f.lng ?? f.longitude
+              if (typeof lat !== 'number' || typeof lng !== 'number') continue
+
+              const cart = Cesium.Cartesian3.fromDegrees(lng, lat, f.alt ?? f.height ?? 0)
+              const screenPos = viewer.scene.cartesianToCanvasCoordinates(cart)
+              if (!screenPos) continue
+              if (screenPos.x < 0 || screenPos.x > viewWidth || screenPos.y < 0 || screenPos.y > viewHeight) continue
+
+              const distance = Cesium.Cartesian3.distance(cart, camCartesian)
+              const item: VisibleItem = {
+                id: String(f.id ?? f.icao24 ?? f.mmsi ?? `${layer}-${lat}-${lng}`),
+                type: layer,
+                label: String(f.callsign ?? f.name ?? f.id ?? `${layer} item`),
+                lat,
+                lon: lng,
+                height: f.alt ?? f.height,
+                distanceKm: Math.round((distance / 1000) * 10) / 10,
+              }
+              if (includeScreen) {
+                item.screenX = Math.round(screenPos.x)
+                item.screenY = Math.round(screenPos.y)
+              }
+              items.push(item)
+            }
+          }
+
+          // Sort by distance
+          items.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
+
+          return {
+            ok: true,
+            action: name,
+            count: items.length,
+            items,
+            camera: {
+              center: {
+                lng: Cesium.Math.toDegrees(cameraPos.longitude),
+                lat: Cesium.Math.toDegrees(cameraPos.latitude),
+                height: cameraPos.height,
+              },
+              viewRadiusKm: getViewContext().viewRadiusKm,
+            },
+          }
+        }
+
         // ── Layer management ──
+        // ── Pixel-to-world grounding ──
+        case 'pick_at': {
+          // Pick the globe at screen coordinates (x, y) and return world coords + nearby entities
+          const screenX = Number(args.x)
+          const screenY = Number(args.y)
+          if (isNaN(screenX) || isNaN(screenY)) {
+            return { ok: false, action: name, error: 'x and y must be numbers' }
+          }
+
+          // Pick the globe terrain at screen position
+          const ray = viewer.camera.getPickRay(new Cesium.Cartesian2(screenX, screenY))
+          if (!ray) return { ok: false, action: name, error: 'No ray for screen position' }
+
+          const cartesian = viewer.scene.globe.pick(ray, viewer.scene)
+          if (!cartesian) {
+            // Ray missed the globe — return sky/space
+            return {
+              ok: true,
+              action: name,
+              world: null,
+              screenX,
+              screenY,
+              note: 'Ray did not intersect the globe (sky/space)',
+            }
+          }
+
+          const carto = Cesium.Cartographic.fromCartesian(cartesian)
+          const lng = Cesium.Math.toDegrees(carto.longitude)
+          const lat = Cesium.Math.toDegrees(carto.latitude)
+          const height = carto.height
+
+          // Also try picking entities at this screen position
+          const picked = viewer.scene.pick(new Cesium.Cartesian2(screenX, screenY))
+          let pickedEntity: { id: string; label?: string } | null = null
+          if (Cesium.defined(picked)) {
+            const entity = (picked as any).id
+            if (entity && entity.id) {
+              let label = String(entity.id)
+              if (entity.label?.text) {
+                try {
+                  const text = entity.label.text.getValue(Cesium.JulianDate.now())
+                  if (text) label = text
+                } catch { /* use id */ }
+              }
+              pickedEntity = { id: String(entity.id), label }
+            }
+          }
+
+          // Find nearest visible entities within a radius
+          const radiusKm = Number(args.radiusKm) || 50
+          const nearby: Array<{ id: string; type: string; label: string; lat: number; lon: number; distanceKm: number }> = []
+          const pickCartesian = cartesian
+          for (const entity of viewer.entities.values) {
+            if (nearby.length >= 10) break
+            if (typeof entity.id === 'string' && entity.id.startsWith('ai-')) continue
+            let pos: Cesium.Cartesian3 | undefined
+            try {
+              pos = entity.position?.getValue(Cesium.JulianDate.now())
+            } catch { continue }
+            if (!pos) continue
+            const dist = Cesium.Cartesian3.distance(pos, pickCartesian)
+            const distKm = dist / 1000
+            if (distKm > radiusKm) continue
+            let label = String(entity.id)
+            if (entity.label?.text) {
+              try {
+                const text = entity.label.text.getValue(Cesium.JulianDate.now())
+                if (text) label = text
+              } catch { /* use id */ }
+            }
+            const entityCarto = Cesium.Cartographic.fromCartesian(pos)
+            nearby.push({
+              id: String(entity.id),
+              type: 'entity',
+              label,
+              lat: Cesium.Math.toDegrees(entityCarto.latitude),
+              lon: Cesium.Math.toDegrees(entityCarto.longitude),
+              distanceKm: Math.round(distKm * 10) / 10,
+            })
+          }
+          nearby.sort((a, b) => a.distanceKm - b.distanceKm)
+
+          return {
+            ok: true,
+            action: name,
+            world: { lng, lat, height: Math.round(height * 10) / 10 },
+            screenX,
+            screenY,
+            pickedEntity,
+            nearby,
+          }
+        }
+
+        case 'pick_object': {
+          // Select an entity by ID, register it in context store, and return its details
+          const id = String(args.entityId || '')
+          if (!id) return { ok: false, action: name, error: 'No entityId provided' }
+
+          const entity = viewer.entities.getById(id)
+          if (!entity) return { ok: false, action: name, error: `Entity ${id} not found` }
+
+          let position: Cesium.Cartesian3 | undefined
+          try {
+            position = entity.position?.getValue(Cesium.JulianDate.now())
+          } catch { /* no position */ }
+
+          let lat = 0, lon = 0, height = 0
+          if (position) {
+            const carto = Cesium.Cartographic.fromCartesian(position)
+            lat = Cesium.Math.toDegrees(carto.latitude)
+            lon = Cesium.Math.toDegrees(carto.longitude)
+            height = carto.height
+          }
+
+          let label = String(entity.id)
+          if (entity.label?.text) {
+            try {
+              const text = entity.label.text.getValue(Cesium.JulianDate.now())
+              if (text) label = text
+            } catch { /* use id */ }
+          }
+
+          // Register in context store and select
+          contextStore.register(id, 'entity', label, { id, type: 'entity' as any, position: { lon, lat, height }, meta: {}, freshness: Date.now() } as any)
+          contextStore.select(id)
+
+          // Get screen coordinates if visible
+          let screenX: number | undefined, screenY: number | undefined
+          if (position) {
+            const screenPos = viewer.scene.cartesianToCanvasCoordinates(position)
+            if (screenPos) {
+              screenX = Math.round(screenPos.x)
+              screenY = Math.round(screenPos.y)
+            }
+          }
+
+          return {
+            ok: true,
+            action: name,
+            entity: { id, label, lat, lon, height, screenX, screenY },
+          }
+        }
+
         case 'set_layer_visibility': {
           const layerId = normalizeLayerId(String(args.layerId || ''))
           const enabled = Boolean(args.enabled)
@@ -410,6 +696,63 @@ export function createActionRunner(bindings: ActionRunnerBindings): {
           return { ok: true, action: name, removed: toRemove.length }
         }
 
+        // ── WorldOverlay tools ──
+        case 'add_label': {
+          if (!worldOverlay) return { ok: false, action: name, error: 'WorldOverlay not available' }
+          const target = await resolveAnnotationTarget({
+            target: args.target as string | undefined,
+            latitude: args.latitude as number | undefined,
+            longitude: args.longitude as number | undefined,
+          })
+          if (!target) return { ok: false, action: name, error: 'Could not resolve location' }
+          const id = `ai-label-${Date.now()}`
+          worldOverlay.registerLabel({
+            id,
+            lat: target.lat,
+            lon: target.lon,
+            height: Number(args.height) || 0,
+            text: String(args.text || args.label || 'Label'),
+            category: String(args.category || 'ai'),
+            priority: Number(args.priority) || 5,
+            color: String(args.color || '#4affd4'),
+            fontSize: Number(args.fontSize) || 12,
+          })
+          return { ok: true, action: name, labelId: id, lon: target.lon, lat: target.lat }
+        }
+
+        case 'add_card': {
+          if (!worldOverlay) return { ok: false, action: name, error: 'WorldOverlay not available' }
+          const target = await resolveAnnotationTarget({
+            target: args.target as string | undefined,
+            latitude: args.latitude as number | undefined,
+            longitude: args.longitude as number | undefined,
+          })
+          if (!target) return { ok: false, action: name, error: 'Could not resolve location' }
+          const id = `ai-card-${Date.now()}`
+          worldOverlay.registerCard({
+            id,
+            lat: target.lat,
+            lon: target.lon,
+            height: Number(args.height) || 0,
+            title: String(args.title || 'AI Card'),
+            subtitle: String(args.subtitle || ''),
+            category: String(args.category || 'ai'),
+            priority: Number(args.priority) || 5,
+            color: String(args.color || '#4affd4'),
+          })
+          return { ok: true, action: name, cardId: id, lon: target.lon, lat: target.lat }
+        }
+
+        case 'remove_overlay': {
+          if (!worldOverlay) return { ok: false, action: name, error: 'WorldOverlay not available' }
+          const id = String(args.overlayId || '')
+          if (!id) return { ok: false, action: name, error: 'No overlayId provided' }
+          // Try removing as label first, then as card
+          worldOverlay.removeLabel(id)
+          worldOverlay.removeCard(id)
+          return { ok: true, action: name, overlayId: id }
+        }
+
         default:
           return { ok: false, action: name, error: `Unknown action: ${name}` }
       }
@@ -577,6 +920,50 @@ export function createActionRunner(bindings: ActionRunnerBindings): {
           parameters: { type: 'object', properties: {} },
         },
       },
+      {
+        type: 'function',
+        function: {
+          name: 'whats_in_view',
+          description: 'Return a structured list of all visible entities and live features with screen-space coordinates, geographic coordinates, and distance from camera. Use this to answer "what am I looking at?" or "what\'s near the center of the screen?"',
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number', description: 'Max results (default 50)' },
+              includeScreenCoords: { type: 'boolean', description: 'Include screen X/Y pixel coordinates (default true)' },
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pick_at',
+          description: 'Pick the globe at screen coordinates (x, y) and return world coordinates, the entity at that position (if any), and nearby entities. This is how the AI can reference "that ridge" or "that anomaly" — by screen position.',
+          parameters: {
+            type: 'object',
+            properties: {
+              x: { type: 'number', description: 'Screen X pixel coordinate' },
+              y: { type: 'number', description: 'Screen Y pixel coordinate' },
+              radiusKm: { type: 'number', description: 'Search radius for nearby entities (default 50 km)' },
+            },
+            required: ['x', 'y'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pick_object',
+          description: 'Select an entity by its ID. Returns the entity\'s geographic coordinates, screen position, and label. Registers it in the context store as the selected entity.',
+          parameters: {
+            type: 'object',
+            properties: {
+              entityId: { type: 'string', description: 'Entity ID (from whats_in_view or query_data results)' },
+            },
+            required: ['entityId'],
+          },
+        },
+      },
       // ── Annotation tools ──
       {
         type: 'function',
@@ -638,6 +1025,65 @@ export function createActionRunner(bindings: ActionRunnerBindings): {
           name: 'clear_annotations',
           description: 'Remove all AI-created markers, bounding boxes, and highlights from the globe.',
           parameters: { type: 'object', properties: {} },
+        },
+      },
+      // ── WorldOverlay tools ──
+      {
+        type: 'function',
+        function: {
+          name: 'add_label',
+          description: 'Add a persistent label on the globe at a location using the WorldOverlay system (with collision management and culling). Labels survive camera moves and are managed by the overlay system.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: { type: 'string', description: 'Place name' },
+              latitude: { type: 'number' },
+              longitude: { type: 'number' },
+              height: { type: 'number', description: 'Height in meters (default 0)' },
+              text: { type: 'string', description: 'Label text' },
+              label: { type: 'string', description: 'Alias for text' },
+              category: { type: 'string', description: 'Category for grouping (default "ai")' },
+              priority: { type: 'number', description: 'Priority 0-10, higher = more visible (default 5)' },
+              color: { type: 'string', description: 'Hex color (default #4affd4 cyan)' },
+              fontSize: { type: 'number', description: 'Font size in px (default 12)' },
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'add_card',
+          description: 'Add an info card on the globe at a location using the WorldOverlay system. Cards show title + subtitle and are managed with collision/culling.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: { type: 'string' },
+              latitude: { type: 'number' },
+              longitude: { type: 'number' },
+              height: { type: 'number' },
+              title: { type: 'string', description: 'Card title' },
+              subtitle: { type: 'string', description: 'Card subtitle (optional)' },
+              category: { type: 'string' },
+              priority: { type: 'number' },
+              color: { type: 'string' },
+            },
+            required: ['title'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'remove_overlay',
+          description: 'Remove a specific label or card from the WorldOverlay by its ID.',
+          parameters: {
+            type: 'object',
+            properties: {
+              overlayId: { type: 'string', description: 'ID of the label or card to remove' },
+            },
+            required: ['overlayId'],
+          },
         },
       },
     ]

@@ -51,6 +51,7 @@ export class VisionPlugin implements EarthEnginePlugin {
     this.actionRunner = createActionRunner({
       viewer: ctx.viewer,
       pluginManager,
+      worldOverlay: ctx.worldOverlay,
       getLiveFeatures: (layerKey: string) => {
         const features = Array.from(this.liveFeatures.values())
         return features.filter((f) => f.type === layerKey)
