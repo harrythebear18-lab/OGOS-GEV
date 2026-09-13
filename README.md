@@ -50,9 +50,9 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **Build:** electron-vite + Vite 5
 - **UI:** React 18 + TypeScript
 - **3D globe:** CesiumJS
-- **GPU compute:** WebGPU (7 WGSL compute kernels compiled — not yet wired to production)
+- **GPU compute:** WebGPU (7 WGSL compute kernels — wired to slope/anomaly via compute dispatcher)
 - **Hardware codecs:** WebCodecs (ImageDecoder, VideoEncoder/Decoder probed — not yet wired to production)
-- **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool — wired to DEM slope/runoff/anomaly)
+- **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool — wired to DEM slope/runoff/anomaly, fallback for compute dispatcher)
 - **Streaming I/O:** ReadableStream pipelines with backpressure (wired to DEM/canopy/tile fetches)
 - **SGP4 / orbital math:** `satellite.js`
 - **KML/KMZ:** `@xmldom/xmldom` + `adm-zip`
@@ -68,8 +68,8 @@ the full picture.
 
 | Subsystem | What it touches | Status |
 |-----------|----------------|--------|
-| WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | compiled, **not wired to production** |
-| Worker threads | OS threads via worker_threads + SharedArrayBuffer | **wired** (slope, runoff, anomaly) |
+| WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | **wired** (slope, anomaly via compute dispatcher) |
+| Worker threads | OS threads via worker_threads + SharedArrayBuffer | **wired** (slope, runoff, anomaly, dispatcher fallback) |
 | Streaming I/O | ReadableStream backpressure | **wired** (DEM, canopy, tile cache) |
 | WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | probed, **not wired to production** |
 | WASM SIMD | 128-bit CPU vector units | probed, **no module built** |
@@ -89,15 +89,14 @@ HAL probes on startup:
 
 | Workload | Backend | Verified |
 |----------|---------|----------|
-| DEM slope (Horn's method) | worker pool (`dem-slope.worker.js`) | ✅ wired |
+| DEM slope (Horn's method) | compute dispatcher → WebGPU or worker pool | ✅ wired |
 | Priority-Flood depression filling | worker pool (`priority-flood.worker.js`) | ✅ wired |
-| Anomaly box-blur + residuals | worker pool (`anomaly-blur.worker.js`) | ✅ wired |
+| Anomaly box-blur + residuals | compute dispatcher → WebGPU or worker pool | ✅ wired |
 | DEM tile PNG fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
 | Canopy GIBS NDVI fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
 | Tile cache fetch | streaming I/O (`fetchToBuffer`) | ✅ wired |
-| DEM hillshade | worker (`dem-hillshade.worker.js`) | built, **not dispatched** |
-| WebGPU band math (NDVI/NDWI/NBR) | WebGPU kernels | compiled, **not called** |
-| WebGPU anomaly detection | WebGPU kernel | compiled, **not called** |
+| DEM hillshade | worker (`dem-hillshade.worker.js`) | contract ready, **plugin not built** |
+| WebGPU band math (NDVI/NDWI/NBR) | WebGPU kernels | contract ready, **plugin not built** |
 | WebCodecs image decode | ImageDecoder | probed, **not called** |
 | WebCodecs video encode | VideoEncoder | probed, **not called** |
 

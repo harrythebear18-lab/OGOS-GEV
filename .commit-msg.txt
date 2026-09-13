@@ -1,20 +1,20 @@
-Fix README — plugin count, plugin table, Node version, build path, project structure, v0.8 status
+Wire compute dispatcher — WebGPU slope/anomaly now touch real GPU
 
-Corrections:
-- Plugin count: 34 → 33 (verified against register array in plugins/index.ts)
-- Plugin table: fixed to match code's actual tier structure
-  - Tier 1: added missing "Infrastructure" (was 7, now 8)
-  - Tier 2: removed Search Zones/Rest Points/Fall Risk/Remains Corridor/Case Profiles/Hiker Profile (they're Tier 5)
-  - Tier 4: removed Predictions (it's Tier 4b)
-  - Tier 5: added all 7 plugins (was only listing Export/Import)
-- Removed "Satellites" from plugin table (it's a separate overlay, not a plugin)
-- Added note explaining satellites are a SatellitesOverlay, not a plugin
-- Node.js requirement: 18+ → 20+ (matches tech stack)
-- Build output: hardcoded E:/osint-builds/release → dist/ or ELECTRON_OUTPUT_DIR
-- Project structure: added all root-level files (LICENSE*, LICENSING.md, PRIVACY.md, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, .env.example, .github/)
-- Project structure: added license-manager.ts and PrivacyPolicyPanel.tsx
-- Status: added v0.8 section (licensing, privacy, security hardening)
-- Quick start: clone command instead of hardcoded local path
+Define a single compute contract (src/shared/compute-contract.ts):
+  task in → buffer out → backend tagged
+
+Renderer compute dispatcher routes to best backend:
+  1. WebGPU kernel (if available + grid ≥ 128x128)
+  2. CPU worker pool via IPC (fallback)
+  3. noop (caller falls back to legacy IPC)
+
+Main-process compute fallback handles compute:task IPC → worker pool.
+
+Wire slope plugin to dispatcher (WebGPU dem-slope → worker → legacy IPC).
+Wire anomaly plugin to dispatcher (WebGPU anomaly → worker → legacy IPC).
+Add terrain:dem:raw IPC for raw DEM grid data to renderer.
+Remove dead gpu-manager.ts stub.
+Update HAL.md + README truth tables.
 
 Generated with [Devin](https://devin.ai)
 

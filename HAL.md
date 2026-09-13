@@ -190,8 +190,22 @@ over NVIDIA-only CUDA for the initial implementation.
 | File | Purpose |
 |------|---------|
 | `src/renderer/globe/hal/gpu-compute.ts` | WebGPU compute shaders (7 WGSL kernels) |
+| `src/renderer/globe/hal/compute-dispatcher.ts` | Compute dispatcher — routes tasks to WebGPU or CPU worker via IPC |
 | `src/renderer/globe/hal/webcodecs.ts` | Hardware video/image codecs |
 | `src/renderer/globe/hal/index.ts` | HAL init + capability reporting |
+
+### Shared compute contract
+
+| File | Purpose |
+|------|---------|
+| `src/shared/compute-contract.ts` | Single compute contract — task in, buffer out, backend tagged |
+| `src/shared/slope-utils.ts` | Pure slope clustering (shared between main and renderer) |
+
+### Main-process compute fallback
+
+| File | Purpose |
+|------|---------|
+| `src/main/services/compute-fallback.ts` | IPC handler for `compute:task` — routes to worker pool |
 
 ### IPC bindings
 
@@ -203,6 +217,8 @@ over NVIDIA-only CUDA for the initial implementation.
 | `hal:worker-stats` | Get worker pool stats (busy/queued/total) |
 | `hal:stream-to-disk` | Stream a URL to disk with progress events |
 | `hal:stream:progress` | Progress event for streaming downloads |
+| `compute:task` | Compute dispatcher — routes to WebGPU or CPU worker |
+| `terrain:dem:raw` | Raw DEM grid data for renderer-side compute |
 
 ---
 
@@ -339,7 +355,29 @@ event loop — single core, no GPU, no vector units, no streaming:
 | Tile/DEM fetches | `await res.arrayBuffer()` | Buffers entire response in memory |
 | Live data parsing | `JSON.parse` on main thread | Blocks event loop |
 
-### Migrated to worker pool (CPU parallelism)
+### Migrated to compute dispatcher (WebGPU → CPU worker → fallback)
+
+The compute dispatcher is the central routing layer. Plugins call
+`computeDispatcher.dispatch(task, payload)` and get a result with the
+backend tagged. No plugin cares how it ran — only that it did.
+
+| Service | Task | WebGPU kernel | CPU worker | Status |
+|---------|------|---------------|------------|--------|
+| `slope-plugin.ts` | `slope` | `dem-slope` | `dem-slope.worker.js` | Wired — dispatcher → GPU or worker |
+| `anomaly-plugin.ts` | `anomaly` | `anomaly` | `anomaly-blur.worker.js` | Wired — dispatcher → GPU or worker |
+| Hillshade overlay | `hillshade` | `dem-hillshade` | `dem-hillshade.worker.js` | Contract ready, plugin not built |
+| Sentinel-2 band math | `ndvi`/`ndwi`/`nbr` | `ndvi`/`ndwi`/`nbr` | — | Contract ready, plugin not built |
+
+Flow:
+```
+Plugin → computeDispatcher.dispatch("slope", payload)
+  → WebGPU available + grid ≥ 128x128? → GPU compute shader
+  → Otherwise → IPC compute:task → CPU worker pool
+  → Otherwise → noop (caller falls back to legacy IPC)
+← ComputeResult { output, backend, durationMs }
+```
+
+### Migrated to worker pool (CPU parallelism, legacy path)
 
 | Service | Function | Worker | Before | After |
 |---------|----------|--------|--------|-------|
@@ -361,9 +399,8 @@ All three fall back to inline JS loops if the worker pool is unavailable.
 
 | Workload | Target | Status |
 |----------|--------|--------|
-| DEM hillshade (renderer) | WebGPU `dem-hillshade` kernel | Kernel exists, not wired to plugin |
-| Sentinel-2 NDVI/NDWI/NBR | WebGPU `ndvi`/`ndwi`/`nbr` kernels | Kernels exist, not wired to plugin |
-| Anomaly detection (renderer) | WebGPU `anomaly` kernel | Kernel exists, not wired to plugin |
+| DEM hillshade (renderer) | WebGPU `dem-hillshade` kernel | Contract ready via dispatcher, no plugin built yet |
+| Sentinel-2 NDVI/NDWI/NBR | WebGPU `ndvi`/`ndwi`/`nbr` kernels | Contract ready via dispatcher, no plugin built yet |
 | PNG decode (main process) | WebCodecs ImageDecoder | WebCodecs in renderer, pngjs in main — needs IPC bridge |
 | Video timelapse export | WebCodecs VideoEncoder | Service ready, not wired to export |
 | AI vision frame capture | WebCodecs VideoFrame | Service ready, not wired to AI bridge |
@@ -454,11 +491,15 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [x] Canopy GIBS fetches → streaming I/O
 - [x] Tile cache fetches → streaming I/O
 
-### Phase 3 — Pending (workload migration to GPU)
+### Phase 3 — In Progress (workload migration to GPU)
 
-- [ ] Wire `dem-hillshade` WebGPU kernel to hillshade plugin
-- [ ] Wire `ndvi`/`ndwi`/`nbr` WebGPU kernels to Sentinel-2 plugin
-- [ ] Wire `anomaly` WebGPU kernel to anomaly plugin
+- [x] Compute contract (`src/shared/compute-contract.ts`)
+- [x] Compute dispatcher (renderer — WebGPU → CPU worker → fallback)
+- [x] Compute fallback (main — IPC → worker pool)
+- [x] Wire slope plugin to compute dispatcher
+- [x] Wire anomaly plugin to compute dispatcher
+- [ ] Wire `dem-hillshade` WebGPU kernel to hillshade plugin (plugin not built)
+- [ ] Wire `ndvi`/`ndwi`/`nbr` WebGPU kernels to Sentinel-2 plugin (plugin not built)
 - [ ] Wire `color-transform` WebGPU kernel where needed
 - [ ] Benchmark WebGPU vs worker vs inline for each workload
 

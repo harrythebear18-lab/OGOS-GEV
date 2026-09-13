@@ -19,6 +19,7 @@ import { generateSearchZones } from './services/search-service'
 import { findRestPoints } from './services/rest-service'
 import { planRoute } from './services/route-service'
 import { licenseManager } from './services/license-manager'
+import { registerComputeFallback } from './services/compute-fallback'
 import { analyzeFallRisk } from './services/fall-risk-service'
 import { analyzeRunoff } from './services/runoff-service'
 import { analyzeRemainsCorridor } from './services/remains-corridor-service'
@@ -102,6 +103,83 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.DEM_PROFILE, async (_event, req) => {
     return elevationProfile(req.coords)
+  })
+
+  // Raw DEM data for renderer-side compute dispatcher (WebGPU path)
+  ipcMain.handle(IPC.DEM_RAW, async (_event, req: { bounds: [{ lng: number; lat: number }, { lng: number; lat: number }]; zoom?: number }) => {
+    const { loadTile } = await import('./services/dem-service')
+    const { lngLatToTile, DEFAULT_ZOOM } = await import('./services/dem-tiles')
+    const { computeOptimalZoom } = await import('./services/dem-zoom')
+
+    const [sw, ne] = req.bounds
+    const zoom = req.zoom ?? DEFAULT_ZOOM
+    const effectiveZoom = computeOptimalZoom(req.bounds, zoom, 32)
+    const minTile = lngLatToTile(sw.lng, ne.lat, effectiveZoom)
+    const maxTile = lngLatToTile(ne.lng, sw.lat, effectiveZoom)
+    const tilesX = maxTile.x - minTile.x + 1
+    const tilesY = maxTile.y - minTile.y + 1
+
+    // Load and merge tiles
+    const tileGrids: (number | null)[][][][] = []
+    for (let ty = 0; ty < tilesY; ty++) {
+      tileGrids[ty] = []
+      for (let tx = 0; tx < tilesX; tx++) {
+        const tile = await loadTile(minTile.x + tx, minTile.y + ty, effectiveZoom)
+        tileGrids[ty][tx] = tile.grid
+      }
+    }
+
+    const grid: (number | null)[][] = []
+    for (let ty = 0; ty < tilesY; ty++) {
+      for (let row = 0; row < tileGrids[ty][0].length; row++) {
+        const mergedRow: (number | null)[] = []
+        for (let tx = 0; tx < tilesX; tx++) {
+          const tileRow = tileGrids[ty][tx][row]
+          if (tileRow) mergedRow.push(...tileRow)
+        }
+        grid.push(mergedRow)
+      }
+    }
+
+    const height = grid.length
+    const width = grid[0]?.length ?? 0
+
+    // Compute cell sizes
+    const haversineMeters = (lng1: number, lat1: number, lng2: number, lat2: number): number => {
+      const R = 6371000
+      const toRad = (d: number) => (d * Math.PI) / 180
+      const dLat = toRad(lat2 - lat1)
+      const dLng = toRad(lng2 - lng1)
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+      return 2 * R * Math.asin(Math.sqrt(h))
+    }
+    const latMid = (sw.lat + ne.lat) / 2
+    const lngSpanM = haversineMeters(sw.lng, latMid, ne.lng, latMid)
+    const latSpanM = haversineMeters(sw.lng, sw.lat, sw.lng, ne.lat)
+    const cellSizeX = lngSpanM / width
+    const cellSizeY = latSpanM / height
+    const lngStep = (ne.lng - sw.lng) / width
+    const latStep = (ne.lat - sw.lat) / height
+
+    // Flatten to Float32Array (null → 0)
+    const elev = new Float32Array(width * height)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        elev[y * width + x] = grid[y]?.[x] ?? 0
+      }
+    }
+
+    return {
+      elev: Array.from(elev),
+      width,
+      height,
+      cellSizeX,
+      cellSizeY,
+      swLng: sw.lng,
+      neLat: ne.lat,
+      lngStep,
+      latStep,
+    }
   })
 
   ipcMain.handle(IPC.SLOPE_ANALYSIS, async (_event, req) => {
@@ -647,6 +725,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.LICENSE_MACHINE_ID, () => {
     return licenseManager.getMachineId()
   })
+
+  /* ── Compute dispatcher (HAL backend selection) ── */
+  registerComputeFallback()
 
   console.log('[ipc] all IPC handlers registered')
 }

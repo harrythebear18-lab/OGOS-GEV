@@ -2,13 +2,16 @@
  * Slope Bands Plugin — DEM-derived slope analysis.
  * Tier 1, Priority 3. Both repos use slope for terrain understanding.
  *
- * Requests slope analysis from main process (via IPC), renders colored bands
- * on the globe as a Cesium imagery layer or polygon overlay.
+ * Uses the compute dispatcher for hardware-accelerated slope computation.
+ * Tries WebGPU first (renderer), falls back to CPU worker pool (main process),
+ * then to the legacy full-analysis IPC as a last resort.
  */
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 import type { SlopeBand } from '@shared/types'
+import { computeDispatcher } from '../hal/compute-dispatcher'
+import { clusterSlopeBands, SLOPE_THRESHOLDS } from '@shared/slope-utils'
 
 export class SlopeBandsPlugin implements EarthEnginePlugin {
   id = 'slope-bands'
@@ -105,6 +108,50 @@ export class SlopeBandsPlugin implements EarthEnginePlugin {
     this.status = { ...this.status, status: 'loading' }
 
     try {
+      // ── Path 1: Compute dispatcher (WebGPU → CPU worker → fallback) ──
+      // Get raw DEM data from main process
+      const demData = await this.ipc.invoke('terrain:dem:raw', {
+        bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
+      }) as { elev: number[]; width: number; height: number; cellSizeX: number; cellSizeY: number; swLng: number; neLat: number; lngStep: number; latStep: number } | null
+
+      if (demData && demData.elev.length > 0) {
+        // Dispatch slope computation to best available backend
+        const result = await computeDispatcher.dispatch('slope', {
+          width: demData.width,
+          height: demData.height,
+          input: new Float32Array(demData.elev),
+          cellSizeX: demData.cellSizeX,
+          cellSizeY: demData.cellSizeY,
+          params: new Float32Array([demData.cellSizeX, demData.cellSizeY]),
+        })
+
+        if (result.backend !== 'noop' && result.output.length > 0) {
+          // Cluster slope bands in the renderer
+          const threshold = SLOPE_THRESHOLDS[this.profile]
+          const bands = clusterSlopeBands(
+            result.output,
+            threshold,
+            demData.width,
+            demData.height,
+            demData.swLng,
+            demData.neLat,
+            demData.lngStep,
+            demData.latStep,
+          )
+
+          console.log(`[slope-bands] computed on ${result.backend} — ${demData.width}x${demData.height} in ${result.durationMs.toFixed(1)}ms, ${bands.length} bands`)
+
+          if (!this.dataSource) { this.status = { count: 0, status: 'nominal' }; return }
+          this.dataSource.entities.removeAll()
+          this.currentBands = bands
+          for (const band of bands) this.addBandEntity(band)
+          this.status = { count: bands.length, status: 'nominal' }
+          return
+        }
+      }
+
+      // ── Path 2: Legacy full-analysis IPC fallback ──
+      console.warn('[slope-bands] dispatcher path failed, falling back to legacy IPC')
       const result = await this.ipc.invoke('terrain:slope:analysis', {
         bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
         profile: this.profile,
@@ -115,21 +162,14 @@ export class SlopeBandsPlugin implements EarthEnginePlugin {
         return
       }
 
-      // Re-check after async — plugin may have been deactivated during fetch
       if (!this.dataSource) {
         this.status = { count: 0, status: 'nominal' }
         return
       }
 
-      // Clear old bands
       this.dataSource.entities.removeAll()
       this.currentBands = result.bands
-
-      // Render new bands
-      for (const band of result.bands) {
-        this.addBandEntity(band)
-      }
-
+      for (const band of result.bands) this.addBandEntity(band)
       this.status = { count: result.bands.length, status: 'nominal' }
     } catch (err) {
       this.status = { ...this.status, status: 'error', error: String(err) }

@@ -7,13 +7,14 @@
  *  - Caves, sinkholes, mineshafts, craters (depressions)
  *  - Rock spires, towers, peaks, buildings (prominences)
  *
- * Uses the selection bbox as the analysis area. Runs automatically when the
- * bbox changes, or manually via the Run button.
+ * Uses the compute dispatcher for hardware-accelerated anomaly computation.
+ * Tries WebGPU first, falls back to CPU worker pool, then legacy IPC.
  */
 
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 import type { AnomalyAnalysisResponse, AnomalyZone } from '@shared/types'
+import { computeDispatcher } from '../hal/compute-dispatcher'
 
 export class AnomalyPlugin implements EarthEnginePlugin {
   id = 'anomaly'
@@ -107,6 +108,46 @@ export class AnomalyPlugin implements EarthEnginePlugin {
     this.status = { ...this.status, status: 'loading' }
 
     try {
+      // ── Path 1: Compute dispatcher (WebGPU → CPU worker → fallback) ──
+      const demData = await this.ipc.invoke('terrain:dem:raw', {
+        bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
+      }) as { elev: number[]; width: number; height: number; cellSizeX: number; cellSizeY: number; swLng: number; neLat: number; lngStep: number; latStep: number } | null
+
+      if (demData && demData.elev.length > 0) {
+        // Dispatch anomaly computation to best available backend
+        const result = await computeDispatcher.dispatch('anomaly', {
+          width: demData.width,
+          height: demData.height,
+          input: new Float32Array(demData.elev),
+          params: new Float32Array([5]), // blur radius
+        })
+
+        if (result.backend !== 'noop' && result.output.length > 0) {
+          // Cluster anomaly zones in the renderer
+          const zones = this.clusterAnomalyZones(
+            result.output,
+            demData.width,
+            demData.height,
+            demData.cellSizeX,
+            demData.swLng,
+            demData.neLat,
+            demData.lngStep,
+            demData.latStep,
+          )
+
+          console.log(`[anomaly] computed on ${result.backend} — ${demData.width}x${demData.height} in ${result.durationMs.toFixed(1)}ms, ${zones.length} zones`)
+
+          if (!this.dataSource) { this.status = { count: 0, status: 'nominal' }; return }
+          this.dataSource.entities.removeAll()
+          this.zones = zones
+          for (const zone of zones) this.addZoneEntity(zone)
+          this.status = { count: zones.length, status: 'nominal' }
+          return
+        }
+      }
+
+      // ── Path 2: Legacy full-analysis IPC fallback ──
+      console.warn('[anomaly] dispatcher path failed, falling back to legacy IPC')
       const result = await this.ipc.invoke('terrain:anomaly:analysis', {
         bounds: [{ lng: bbox.west, lat: bbox.south }, { lng: bbox.east, lat: bbox.north }],
       }) as AnomalyAnalysisResponse | null
@@ -129,6 +170,76 @@ export class AnomalyPlugin implements EarthEnginePlugin {
       console.warn('[anomaly] analysis failed:', err)
       this.status = { ...this.status, status: 'error', error: String(err) }
     }
+  }
+
+  /** Cluster anomaly residuals into zones — pure computation, runs in renderer. */
+  private clusterAnomalyZones(
+    residuals: Float32Array,
+    width: number,
+    height: number,
+    cellSizeM: number,
+    swLng: number,
+    neLat: number,
+    lngStep: number,
+    latStep: number,
+  ): AnomalyZone[] {
+    // Compute std dev of residuals
+    let mean = 0
+    for (let i = 0; i < residuals.length; i++) mean += residuals[i]
+    mean /= residuals.length
+    let variance = 0
+    for (let i = 0; i < residuals.length; i++) variance += (residuals[i] - mean) ** 2
+    variance /= residuals.length
+    const stdDev = Math.sqrt(variance)
+
+    if (stdDev < 0.1) return []
+
+    const threshold = 2.5 * stdDev
+    const visited = new Uint8Array(width * height)
+    const zones: AnomalyZone[] = []
+    let zoneId = 0
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x
+        if (visited[idx] || Math.abs(residuals[idx]) <= threshold) continue
+
+        const cluster: { x: number; y: number; residual: number }[] = []
+        const stack = [{ x, y }]
+        while (stack.length > 0) {
+          const p = stack.pop()!
+          if (p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) continue
+          const pidx = p.y * width + p.x
+          if (visited[pidx] || Math.abs(residuals[pidx]) <= threshold) continue
+          visited[pidx] = 1
+          cluster.push({ x: p.x, y: p.y, residual: residuals[pidx] })
+          stack.push({ x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 })
+        }
+
+        if (cluster.length < 5) continue
+        const minX = Math.min(...cluster.map((c) => c.x))
+        const maxX = Math.max(...cluster.map((c) => c.x))
+        const minY = Math.min(...cluster.map((c) => c.y))
+        const maxY = Math.max(...cluster.map((c) => c.y))
+        const avgResidual = cluster.reduce((a, c) => a + c.residual, 0) / cluster.length
+        const strength = Math.abs(avgResidual) / stdDev
+        const sizeM = Math.max(maxX - minX, maxY - minY) * cellSizeM
+
+        zones.push({
+          id: `anomaly-zone-${zoneId++}`,
+          coords: [
+            { lng: swLng + minX * lngStep, lat: neLat - minY * latStep },
+            { lng: swLng + maxX * lngStep, lat: neLat - minY * latStep },
+            { lng: swLng + maxX * lngStep, lat: neLat - maxY * latStep },
+            { lng: swLng + minX * lngStep, lat: neLat - maxY * latStep },
+          ],
+          strength,
+          type: avgResidual < 0 ? 'depression' : 'prominence',
+          sizeM,
+        })
+      }
+    }
+    return zones
   }
 
   private addZoneEntity(zone: AnomalyZone): void {

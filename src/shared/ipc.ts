@@ -15,6 +15,7 @@ export const IPC = {
   // Terrain / SAR analysis (ported from OGOS)
   DEM_SAMPLE: 'terrain:dem:sample',
   DEM_PROFILE: 'terrain:dem:profile',
+  DEM_RAW: 'terrain:dem:raw',
   SLOPE_ANALYSIS: 'terrain:slope:analysis',
   ANOMALY_ANALYSIS: 'terrain:anomaly:analysis',
   SEARCH_ZONES: 'terrain:search:zones',
@@ -148,6 +149,9 @@ export const IPC = {
   LICENSE_ACTIVATE: 'license:activate',
   LICENSE_DEACTIVATE: 'license:deactivate',
   LICENSE_MACHINE_ID: 'license:machine-id',
+
+  // Compute dispatcher (HAL backend selection)
+  COMPUTE_TASK: 'compute:task',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
