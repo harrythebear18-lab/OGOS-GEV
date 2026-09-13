@@ -1,30 +1,20 @@
-Add hillshade + band-math plugins + AI command interface
+Wire color-transform WebGPU kernel — GPU color ramp mapping for band-math
 
-Hillshade plugin:
-  DEM fetch → compute dispatcher → WebGPU dem-hillshade kernel or
-  CPU worker → grayscale canvas → Cesium SingleTileImageryProvider
-  Controls: sun azimuth, sun altitude, opacity sliders
+Upgrade the color-transform WGSL kernel from a simple linear stretch
+to proper color ramp interpolation on the GPU. The kernel now accepts
+a packed ramp buffer [value0, r0, g0, b0, value1, r1, g1, b1, ...] and
+outputs RGBA per pixel.
 
-Sentinel-2 band-math plugin:
-  Fetch GIBS S2 bands (B02/B03/B04/B08/B12) via WMS → WebCodecs
-  decode → compute dispatcher → WebGPU ndvi/ndwi/nbr kernel →
-  color-mapped canvas → Cesium imagery overlay
-  Indices: NDVI (vegetation), NDWI (water), NBR (burn severity)
+Update gpu-compute.ts execute() to handle:
+  - 4x output size for color-transform (RGBA vs single float)
+  - Extra ramp storage buffer binding
+  - Ramp stop count in uniform data
 
-AI → Engine command interface (action-runner.ts):
-  Camera intent tools:
-    camera_pan — pan by lat/lng delta
-    camera_orbit — rotate heading by N degrees
-    camera_look_at — point camera at a target
-    describe_viewport — structured metadata (camera, layers, counts, selection)
-  Annotation tools:
-    add_marker — labeled point on globe
-    draw_bbox — bounding box rectangle
-    highlight_area — circular highlight
-    clear_annotations — remove all AI-created overlays
+Add ramp field to ComputePayload and pass through dispatcher.
 
-Add hal:fetch-buffer IPC for renderer-initiated streaming downloads.
-Plugin count: 33 → 35.
+Wire band-math plugin to use GPU color-transform:
+  NDVI/NDWI/NBR result → color-transform kernel → RGBA canvas
+  Falls back to JS color mapping if GPU unavailable
 
 Generated with [Devin](https://devin.ai)
 

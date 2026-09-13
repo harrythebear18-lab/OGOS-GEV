@@ -58,6 +58,8 @@ export interface ComputePayload {
   /** Cell size in meters (for slope/runoff calculations) */
   cellSizeX?: number
   cellSizeY?: number
+  /** Color ramp for color-transform kernel: packed [value0, r0, g0, b0, value1, r1, g1, b1, ...] */
+  ramp?: Float32Array
 }
 
 // ── Result ──

@@ -98,6 +98,7 @@ class ComputeDispatcher {
           height: payload.height,
           input: inputs,
           uniforms: payload.params,
+          ramp: payload.ramp,
         })
 
         const computeResult: ComputeResult = {

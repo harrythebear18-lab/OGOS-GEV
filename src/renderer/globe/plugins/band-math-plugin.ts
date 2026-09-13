@@ -215,8 +215,30 @@ export class BandMathPlugin implements EarthEnginePlugin {
         return
       }
 
-      // Color-map the index values to RGBA
-      const canvas = this.colorMapToCanvas(result.output, bandA.width, bandA.height, spec.ramp)
+      // Color-map the index values to RGBA — try GPU color-transform first
+      let canvas: OffscreenCanvas
+      const gpuRamp = this.rampToFloat32(spec.ramp)
+      if (computeDispatcher.shouldUseGpu(bandA.width, bandA.height) && gpuRamp) {
+        try {
+          const colorResult = await computeDispatcher.dispatch('color-transform', {
+            width: bandA.width,
+            height: bandA.height,
+            input: result.output,
+            ramp: gpuRamp,
+          })
+          if (colorResult.backend !== 'noop' && colorResult.output.length >= bandA.width * bandA.height * 4) {
+            canvas = this.rgbaToCanvas(colorResult.output, bandA.width, bandA.height)
+            console.log(`[band-math] color-transform on ${colorResult.backend} — ${colorResult.durationMs.toFixed(1)}ms`)
+          } else {
+            canvas = this.colorMapToCanvas(result.output, bandA.width, bandA.height, spec.ramp)
+          }
+        } catch {
+          canvas = this.colorMapToCanvas(result.output, bandA.width, bandA.height, spec.ramp)
+        }
+      } else {
+        canvas = this.colorMapToCanvas(result.output, bandA.width, bandA.height, spec.ramp)
+      }
+
       const blobUrl = await this.canvasToBlobUrl(canvas)
 
       this.removeLayer()
@@ -319,6 +341,34 @@ export class BandMathPlugin implements EarthEnginePlugin {
       imageData.data[idx + 3] = 255
     }
 
+    ctx.putImageData(imageData, 0, 0)
+    return canvas
+  }
+
+  /** Convert a color ramp to packed Float32Array for the GPU kernel: [value0, r0, g0, b0, value1, r1, g1, b1, ...] */
+  private rampToFloat32(ramp: [number, number, number, number][]): Float32Array {
+    const packed = new Float32Array(ramp.length * 4)
+    for (let i = 0; i < ramp.length; i++) {
+      packed[i * 4] = ramp[i][0]
+      packed[i * 4 + 1] = ramp[i][1]
+      packed[i * 4 + 2] = ramp[i][2]
+      packed[i * 4 + 3] = ramp[i][3]
+    }
+    return packed
+  }
+
+  /** Convert RGBA Float32Array (from GPU color-transform kernel) directly to a canvas. */
+  private rgbaToCanvas(data: Float32Array, width: number, height: number): OffscreenCanvas {
+    const canvas = new OffscreenCanvas(width, height)
+    const ctx = canvas.getContext('2d')!
+    const imageData = ctx.createImageData(width, height)
+    for (let i = 0; i < width * height; i++) {
+      const idx = i * 4
+      imageData.data[idx] = Math.round(data[idx])
+      imageData.data[idx + 1] = Math.round(data[idx + 1])
+      imageData.data[idx + 2] = Math.round(data[idx + 2])
+      imageData.data[idx + 3] = 255
+    }
     ctx.putImageData(imageData, 0, 0)
     return canvas
   }

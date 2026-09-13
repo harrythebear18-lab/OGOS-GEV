@@ -40,6 +40,8 @@ export interface ComputeParams {
   input: Float32Array | Float32Array[]
   /** Kernel-specific uniforms (e.g., sun azimuth for hillshade) */
   uniforms?: Float32Array
+  /** Color ramp for color-transform kernel: packed [value0, r0, g0, b0, value1, r1, g1, b1, ...] */
+  ramp?: Float32Array
 }
 
 export interface ComputeResult {
@@ -212,10 +214,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `,
 
   'color-transform': /* wgsl */ `
-struct Params { width: u32, height: u32, _pad0: u32, _pad1: u32 };
+struct Params { width: u32, height: u32, rampStops: u32, _pad: u32 };
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> input: array<f32>;
-@group(0) @binding(2) var<storage, read_write> output: array<f32>;
+@group(0) @binding(2) var<storage, read> ramp: array<f32>;  // packed: [value0, r0, g0, b0, value1, r1, g1, b1, ...]
+@group(0) @binding(3) var<storage, read_write> output: array<f32>;  // RGBA packed: [r0, g0, b0, a0, r1, g1, b1, a1, ...]
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -223,10 +226,38 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let y = gid.y;
   if (x >= params.width || y >= params.height) { return; }
   let idx = y * params.width + x;
+  let outIdx = idx * 4u;
 
-  // Simple linear stretch: output = (input - min) / (max - min) * 255
-  // min/max passed in uniforms[0] and uniforms[1]
-  output[idx] = clamp(input[idx] * 255.0, 0.0, 255.0);
+  let val = clamp(input[idx], -1.0, 1.0);
+
+  // Find the ramp segment containing val
+  var r: f32 = 0.0;
+  var g: f32 = 0.0;
+  var b: f32 = 0.0;
+
+  if (val <= ramp[0u]) {
+    r = ramp[1u]; g = ramp[2u]; b = ramp[3u];
+  } else if (val >= ramp[(params.rampStops - 1u) * 4u]) {
+    let last = (params.rampStops - 1u) * 4u;
+    r = ramp[last + 1u]; g = ramp[last + 2u]; b = ramp[last + 3u];
+  } else {
+    for (var i: u32 = 0u; i < params.rampStops - 1u; i++) {
+      let v0 = ramp[i * 4u];
+      let v1 = ramp[(i + 1u) * 4u];
+      if (val >= v0 && val <= v1) {
+        let t = (val - v0) / (v1 - v0);
+        r = ramp[i * 4u + 1u] + t * (ramp[(i + 1u) * 4u + 1u] - ramp[i * 4u + 1u]);
+        g = ramp[i * 4u + 2u] + t * (ramp[(i + 1u) * 4u + 2u] - ramp[i * 4u + 2u]);
+        b = ramp[i * 4u + 3u] + t * (ramp[(i + 1u) * 4u + 3u] - ramp[i * 4u + 3u]);
+        break;
+      }
+    }
+  }
+
+  output[outIdx] = r;
+  output[outIdx + 1u] = g;
+  output[outIdx + 2u] = b;
+  output[outIdx + 3u] = 255.0;
 }
 `,
 }
@@ -295,7 +326,9 @@ class GpuComputeService {
     const start = performance.now()
     const { width, height } = params
     const cellCount = width * height
-    const byteCount = cellCount * 4 // f32
+    // color-transform outputs 4 floats per pixel (RGBA), others output 1
+    const outputFloatsPerCell = kernel === 'color-transform' ? 4 : 1
+    const outputByteCount = cellCount * outputFloatsPerCell * 4 // f32
 
     // Determine input arrays (single or multi-band)
     const inputs = Array.isArray(params.input) ? params.input : [params.input]
@@ -312,11 +345,15 @@ class GpuComputeService {
     }
 
     // Uniform buffer (width, height, + kernel-specific params)
-    const uniformData = new Float32Array([
-      width, height,
-      params.uniforms?.[0] ?? 315 * Math.PI / 180, // azimuth default
-      params.uniforms?.[1] ?? 45 * Math.PI / 180,   // altitude default
-    ])
+    // For color-transform: [width, height, rampStops, 0]
+    // For others: [width, height, azimuth, altitude]
+    const uniformData = kernel === 'color-transform'
+      ? new Float32Array([width, height, params.ramp ? params.ramp.length / 4 : 0, 0])
+      : new Float32Array([
+          width, height,
+          params.uniforms?.[0] ?? 315 * Math.PI / 180,
+          params.uniforms?.[1] ?? 45 * Math.PI / 180,
+        ])
     const uniformBuffer = this.device.createBuffer({
       size: 16, // 4 x f32
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -325,15 +362,25 @@ class GpuComputeService {
 
     // Output buffer
     const outputBuffer = this.device.createBuffer({
-      size: byteCount,
+      size: outputByteCount,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     })
 
     // Readback buffer (staging)
     const readbackBuffer = this.device.createBuffer({
-      size: byteCount,
+      size: outputByteCount,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     })
+
+    // Ramp buffer for color-transform kernel
+    let rampBuffer: GPUBuffer | null = null
+    if (kernel === 'color-transform' && params.ramp) {
+      rampBuffer = this.device.createBuffer({
+        size: params.ramp.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      })
+      this.device.queue.writeBuffer(rampBuffer, 0, params.ramp.buffer as ArrayBuffer, params.ramp.byteOffset, params.ramp.byteLength)
+    }
 
     // Create bind group
     const bindGroupEntries: GPUBindGroupEntry[] = [
@@ -342,7 +389,14 @@ class GpuComputeService {
     for (let i = 0; i < inputBuffers.length; i++) {
       bindGroupEntries.push({ binding: 1 + i, resource: { buffer: inputBuffers[i] } })
     }
-    bindGroupEntries.push({ binding: 1 + inputBuffers.length, resource: { buffer: outputBuffer } })
+    // color-transform: binding 2 = ramp, binding 3 = output
+    // others: binding 1+N = output
+    if (kernel === 'color-transform' && rampBuffer) {
+      bindGroupEntries.push({ binding: 2, resource: { buffer: rampBuffer } })
+      bindGroupEntries.push({ binding: 3, resource: { buffer: outputBuffer } })
+    } else {
+      bindGroupEntries.push({ binding: 1 + inputBuffers.length, resource: { buffer: outputBuffer } })
+    }
 
     const bindGroup = this.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -358,7 +412,7 @@ class GpuComputeService {
     pass.end()
 
     // Copy output to readback buffer
-    encoder.copyBufferToBuffer(outputBuffer, 0, readbackBuffer, 0, byteCount)
+    encoder.copyBufferToBuffer(outputBuffer, 0, readbackBuffer, 0, outputByteCount)
     this.device.queue.submit([encoder.finish()])
 
     // Read back
@@ -371,6 +425,7 @@ class GpuComputeService {
     uniformBuffer.destroy()
     outputBuffer.destroy()
     readbackBuffer.destroy()
+    if (rampBuffer) rampBuffer.destroy()
 
     return {
       output: result,
