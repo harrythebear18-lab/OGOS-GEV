@@ -156,6 +156,9 @@ export const IPC = {
   // Image decode bridge (main → renderer WebCodecs)
   IMAGE_DECODE_REQUEST: 'image:decode-request',
   IMAGE_DECODE_RESPONSE: 'image:decode-response',
+
+  // HAL fetch (streaming I/O for renderer-initiated downloads)
+  HAL_FETCH_BUFFER: 'hal:fetch-buffer',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

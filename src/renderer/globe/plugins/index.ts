@@ -7,6 +7,8 @@ import { pluginManager } from './plugin-manager'
 import { weatherPlugin } from './weather-plugin'
 import { earthquakesPlugin } from './earthquakes-plugin'
 import { slopeBandsPlugin } from './slope-plugin'
+import { hillshadePlugin } from './hillshade-plugin'
+import { bandMathPlugin } from './band-math-plugin'
 import { anomalyPlugin } from './anomaly-plugin'
 import { hydrologyPlugin } from './hydrology-plugin'
 import { waterPlugin } from './water-plugin'
@@ -44,6 +46,8 @@ pluginManager.register([
   weatherPlugin,
   earthquakesPlugin,
   slopeBandsPlugin,
+  hillshadePlugin,
+  bandMathPlugin,
   anomalyPlugin,
   hydrologyPlugin,
   waterPlugin,
@@ -89,6 +93,8 @@ export {
   weatherPlugin,
   earthquakesPlugin,
   slopeBandsPlugin,
+  hillshadePlugin,
+  bandMathPlugin,
   anomalyPlugin,
   hydrologyPlugin,
   waterPlugin,

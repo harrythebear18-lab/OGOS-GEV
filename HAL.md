@@ -221,6 +221,7 @@ over NVIDIA-only CUDA for the initial implementation.
 | `terrain:dem:raw` | Raw DEM grid data for renderer-side compute |
 | `image:decode-request` | Main → renderer: ask WebCodecs to decode PNG/JPEG |
 | `image:decode-response` | Renderer → main: decoded RGBA pixel data |
+| `hal:fetch-buffer` | Fetch URL to buffer via streaming I/O (renderer-initiated) |
 
 ---
 
@@ -401,8 +402,8 @@ All three fall back to inline JS loops if the worker pool is unavailable.
 
 | Workload | Target | Status |
 |----------|--------|--------|
-| DEM hillshade (renderer) | WebGPU `dem-hillshade` kernel | Contract ready via dispatcher, no plugin built yet |
-| Sentinel-2 NDVI/NDWI/NBR | WebGPU `ndvi`/`ndwi`/`nbr` kernels | Contract ready via dispatcher, no plugin built yet |
+| DEM hillshade (renderer) | compute dispatcher → WebGPU or worker | **wired** — hillshade plugin computes and overlays |
+| Sentinel-2 NDVI/NDWI/NBR | compute dispatcher → WebGPU | **wired** — band-math plugin fetches GIBS bands, computes, overlays |
 | PNG decode (DEM, canopy) | WebCodecs ImageDecoder via bridge | **wired** — main sends bytes → renderer decodes → pngjs fallback |
 | Video timelapse export | WebCodecs VideoEncoder | Service ready, not wired to export |
 | AI vision frame capture | WebCodecs VideoFrame | Service ready, not wired to AI bridge |
@@ -500,8 +501,9 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [x] Compute fallback (main — IPC → worker pool)
 - [x] Wire slope plugin to compute dispatcher
 - [x] Wire anomaly plugin to compute dispatcher
-- [ ] Wire `dem-hillshade` WebGPU kernel to hillshade plugin (plugin not built)
-- [ ] Wire `ndvi`/`ndwi`/`nbr` WebGPU kernels to Sentinel-2 plugin (plugin not built)
+- [x] Wire hillshade plugin to compute dispatcher (WebGPU + worker + imagery overlay)
+- [x] Wire band-math plugin to compute dispatcher (NDVI/NDWI/NBR via GIBS bands)
+- [x] AI → Engine command interface (camera intent + annotation tools)
 - [ ] Wire `color-transform` WebGPU kernel where needed
 - [ ] Benchmark WebGPU vs worker vs inline for each workload
 

@@ -555,6 +555,17 @@ export function registerIpcHandlers(): void {
     })
   })
 
+  // Fetch a URL to a buffer via streaming I/O (for renderer-initiated downloads)
+  ipcMain.handle(IPC.HAL_FETCH_BUFFER, async (_event, args: { url: string; timeoutMs?: number; headers?: Record<string, string> }) => {
+    const { streamingIO } = await import('./services/hal/streaming-io')
+    const buf = await streamingIO.fetchToBuffer(args.url, {
+      timeoutMs: args.timeoutMs ?? 20000,
+      headers: args.headers,
+    })
+    // Return as Uint8Array for IPC transfer
+    return buf ? Array.from(new Uint8Array(buf)) : null
+  })
+
   /* ── Climate / Ocean ── */
   ipcMain.on(IPC.CLIMATE_SET_VIEWPORT, (_event, bounds) => {
     climateMonitor.setViewportBounds(bounds)
