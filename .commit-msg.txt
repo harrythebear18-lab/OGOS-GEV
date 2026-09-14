@@ -1,30 +1,29 @@
-AI grounding — whats_in_view, pick_at, pick_object, WorldOverlay tools
+Add volcano plugin — live feeds (EONET + USGS + Smithsonian GVP) + ash simulation
 
-Complete the AI → Engine command interface with grounding tools:
+Volcano plugin with three keyless data sources:
+  1. NASA EONET — global volcano events (open/closed status)
+     Polls every 5 minutes
+  2. USGS Volcano Hazards Program — US volcano alerts with color codes
+     (GREEN/YELLOW/ORANGE/RED), polls every 2 minutes
+  3. Smithsonian GVP WFS — Holocene volcano database (1,215 volcanoes)
+     Fetched once on activation (static database)
 
-whats_in_view:
-  Returns structured list of all visible entities + live features
-  with screen-space coordinates, geographic coordinates, and
-  distance from camera. Answers "what am I looking at?"
+Visualization:
+  - Alert-level colored markers (GREEN/YELLOW/ORANGE/RED)
+  - Erupting volcanoes get larger markers + info cards
+  - WorldOverlay cards for active eruptions
+  - Volcano type, region, threat level, last eruption year
 
-pick_at(x, y):
-  Pixel-to-world grounding. Picks the globe at screen coordinates,
-  returns world coords, entity at that position, and nearby
-  entities within a radius. Lets AI reference "that ridge" / "that
-  anomaly" by screen position.
+Simulation (ash/SO2 dispersion):
+  - Fetches wind direction + speed from Open-Meteo (keyless)
+  - Models plume transport downwind with time-stepped simulation
+  - Plume height based on alert level (RED=12km, ORANGE=8km, WATCH=5km)
+  - Ash concentration fades with distance from source
+  - 3D extruded ellipses show ash cloud at altitude
+  - 30-minute steps, 12-hour simulation window
+  - Updates every 5 seconds
 
-pick_object(entityId):
-  Select an entity by ID, register in context store, return
-  geographic + screen coordinates.
-
-Scene context selectedFeature:
-  Wire renderer pick events to scene context so the AI can see
-  what the user clicked on (App.tsx → window.api.scene.set).
-
-WorldOverlay tools:
-  add_label — persistent label with collision management
-  add_card — info card with title/subtitle
-  remove_overlay — remove by ID
+Plugin count: 35 → 36.
 
 Generated with [Devin](https://devin.ai)
 

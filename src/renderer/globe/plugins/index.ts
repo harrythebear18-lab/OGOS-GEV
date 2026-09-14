@@ -6,6 +6,7 @@
 import { pluginManager } from './plugin-manager'
 import { weatherPlugin } from './weather-plugin'
 import { earthquakesPlugin } from './earthquakes-plugin'
+import { volcanoPlugin } from './volcano-plugin'
 import { slopeBandsPlugin } from './slope-plugin'
 import { hillshadePlugin } from './hillshade-plugin'
 import { bandMathPlugin } from './band-math-plugin'
@@ -45,6 +46,7 @@ pluginManager.register([
   // Tier 1 — Core World Intelligence
   weatherPlugin,
   earthquakesPlugin,
+  volcanoPlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,
@@ -92,6 +94,7 @@ export {
   pluginManager,
   weatherPlugin,
   earthquakesPlugin,
+  volcanoPlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,
