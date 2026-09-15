@@ -11,11 +11,12 @@
     "compile:wasm": "node scripts/compile-wasm.mjs",
     "dev": "npm run copy:cesium && node scripts/dev.js",
     "build": "npm run compile:wasm && npm run copy:cesium && npx electron-vite build",
+    "build:prod": "set NODE_ENV=production && npm run build",
     "preview": "node scripts/preview.js",
-    "dist:win": "npm run build && npx electron-builder --win",
-    "dist:mac": "npm run build && npx electron-builder --mac",
-    "dist:portable": "npm run build && npx electron-builder --win portable",
-    "dist:all": "npm run build && npx electron-builder --win --mac"
+    "dist:win": "npm run build:prod && npx electron-builder --win",
+    "dist:mac": "npm run build:prod && npx electron-builder --mac",
+    "dist:portable": "npm run build:prod && npx electron-builder --win portable",
+    "dist:all": "npm run build:prod && npx electron-builder --win --mac"
   },
   "build": {
     "appId": "com.osint-sentinel-workstation.app",
@@ -57,6 +58,7 @@
     }
   },
   "dependencies": {
+    "@rollup/plugin-terser": "^1.0.0",
     "@types/adm-zip": "^0.5.8",
     "@xmldom/xmldom": "^0.9.12",
     "adm-zip": "^0.6.0",
@@ -68,6 +70,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "satellite.js": "^6.0.2",
+    "terser": "^5.51.2",
     "webm-muxer": "^5.1.4",
     "ws": "^8.21.3"
   },

@@ -1,40 +1,49 @@
-Add real Sentinel-2 STAC/COG ingestion — replaces GIBS browse
+Production build hardening + HAL benchmark plugin (items 18 + 19)
 
-Implements real Sentinel-2 L2A band data ingestion from the public
-(keyless) Element84 Earth Search STAC API. This is the replacement
-for GIBS browse imagery.
+Production build hardening
+  - electron.vite.config.ts now gates sourcemaps, minification, and
+    Terser on `NODE_ENV=production`
+  - Terser drops console.log/info/warn/debug in production builds
+    while preserving console.error for diagnostics
+  - Added `build:prod` and updated dist:* scripts to run production
+    builds before packaging
+  - Added `src/main/utils/is-prod.ts` for main-process env gating
+  - Added `src/renderer/globe/hal/is-prod.ts` for HAL + plugin
+    runtime log suppression
+  - Replaced console.log/warn in `compute-dispatcher.ts` with `halLog`
+  - Main `index.ts` now imports `isProd` / `isDev` from `utils/is-prod`
 
-Pipeline:
-  Renderer: user sets bbox, date range, max cloud, formula
-  Main:     POST to https://earth-search.aws.element84.com/v1/search
-  Main:     select least-cloudy scene from sorted results
-  Main:     open B03/B04/B08/B11 COGs via geotiff (HTTP range)
-  Main:     reproject WGS84 bbox to scene CRS with proj4
-  Main:     read the matching pixel window, resample to 512x512
-  Main:     compute NDVI/NDWI/NBR from real reflectance (DN/10000)
-  Main:     convert window extent back to WGS84 for overlay
-  Main:     return Float32Array + bbox + metadata to renderer
-  Renderer: color-map with formula-specific ramp, overlay on Cesium
+HAL Benchmark plugin
+  - New plugin: `src/renderer/globe/plugins/benchmark-plugin.ts`
+  - New dispatcher method: `computeDispatcher.benchmark()` runs each
+    workload on every available backend (WebGPU, WASM SIMD, CPU worker)
+  - Reports per-backend:
+      - average duration (ms)
+      - throughput (M cells/s)
+      - individual sample timings
+      - Cesium FPS during the run
+  - Preferred backend automatically selected from fastest successful run
+  - Workloads: NDVI 256/512, slope 512, hillshade 512, anomaly 256/1024
+  - FPS tracking added in `Globe.tsx` via `scene.postRender`
+  - Plugin registered and exported in `src/renderer/globe/plugins/index.ts`
 
-Keyless data source:
-  https://earth-search.aws.element84.com/v1/
-  collection: sentinel-2-l2a
+Files added:
+  src/main/utils/is-prod.ts
+  src/renderer/globe/hal/is-prod.ts
+  src/renderer/globe/plugins/benchmark-plugin.ts
 
-No API key, no registration, no paid credits.
+Files modified:
+  electron.vite.config.ts
+  package.json
+  src/main/index.ts
+  src/main/ipc-handlers.ts (minor import alignment via prettier)
+  src/renderer/globe/Globe.tsx
+  src/renderer/globe/hal/compute-dispatcher.ts
+  src/renderer/globe/plugins/index.ts
+  README.md
+  HAL.md
 
-New files:
-  src/main/services/stac-cog-service.ts     — STAC search + COG read
-  src/renderer/globe/plugins/sentinel-stac-plugin.ts — UI + overlay
-
-Modified:
-  package.json              — added geotiff, proj4
-  src/shared/ipc.ts        — added STAC_COG_COMPUTE channel
-  src/main/ipc-handlers.ts — added stac:cog:compute handler
-  src/renderer/globe/plugins/index.ts — registered sentinelStacPlugin
-  README.md                — plugin count 39 → 40, feature list updated
-  HAL.md                   — Phase 5 marked complete, Sentinel-2 status updated
-
-Plugin count: 39 → 40.
+Plugin count: 40 → 41.
 
 Generated with [Devin](https://devin.ai)
 

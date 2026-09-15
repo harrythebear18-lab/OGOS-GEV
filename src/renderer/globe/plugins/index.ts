@@ -12,6 +12,7 @@ import { timelapsePlugin } from './timelapse-plugin'
 import { droneFootagePlugin } from './drone-footage-plugin'
 import { sentinelStacPlugin } from './sentinel-stac-plugin'
 import { slopeBandsPlugin } from './slope-plugin'
+import { benchmarkPlugin } from './benchmark-plugin'
 import { hillshadePlugin } from './hillshade-plugin'
 import { bandMathPlugin } from './band-math-plugin'
 import { anomalyPlugin } from './anomaly-plugin'
@@ -55,6 +56,7 @@ pluginManager.register([
   timelapsePlugin,
   droneFootagePlugin,
   sentinelStacPlugin,
+  benchmarkPlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,
@@ -107,6 +109,7 @@ export {
   timelapsePlugin,
   droneFootagePlugin,
   sentinelStacPlugin,
+  benchmarkPlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,

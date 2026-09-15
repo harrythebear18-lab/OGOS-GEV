@@ -415,6 +415,19 @@ export default function Globe({
       setStatus('ready')
       onViewerReady(v)
 
+      // FPS tracking for benchmark plugin
+      let lastT = performance.now()
+      let frames = 0
+      v.scene.postRender.addEventListener(() => {
+        const now = performance.now()
+        frames++
+        if (now - lastT >= 1000) {
+          (window as any).__cesiumFps = Math.round((frames * 1000) / (now - lastT))
+          frames = 0
+          lastT = now
+        }
+      })
+
       // Create drawing manager for bbox/polygon/line selection
       drawingRef.current = new DrawingManager(v, onSelectionChange, onPinPlace, onEntityPick)
       console.log('[Globe] DrawingManager created')

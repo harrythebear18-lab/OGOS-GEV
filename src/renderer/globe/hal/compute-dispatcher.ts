@@ -19,6 +19,7 @@
 
 import { gpuCompute, type ComputeKernel } from './gpu-compute'
 import { webCodecs } from './webcodecs'
+import { halLog } from './is-prod'
 import {
   initWasmSimd,
   isWasmReady,
@@ -79,11 +80,11 @@ class ComputeDispatcher {
       const loaded = await initWasmSimd()
       if (!loaded) {
         this.capabilities.wasmSimd = false
-        console.warn('[hal/dispatcher] WASM SIMD probe passed but kernel module failed to load')
+        halLog.warn('[hal/dispatcher] WASM SIMD probe passed but kernel module failed to load')
       }
     }
 
-    console.log(`[hal/dispatcher] backends: webgpu=${this.capabilities.webgpu}, cpuWorker=${this.capabilities.cpuWorker}, wasmSimd=${this.capabilities.wasmSimd}, webcodecs=${this.capabilities.webcodecs}`)
+    halLog.log(`[hal/dispatcher] backends: webgpu=${this.capabilities.webgpu}, cpuWorker=${this.capabilities.cpuWorker}, wasmSimd=${this.capabilities.wasmSimd}, webcodecs=${this.capabilities.webcodecs}`)
   }
 
   /** Get current backend capabilities. */
@@ -127,10 +128,10 @@ class ComputeDispatcher {
           height: payload.height,
         }
         this.recordStats(task, 'webgpu', result.durationMs, cellCount)
-        console.log(`[hal/dispatcher] ${task} → WebGPU — ${cellCount} cells in ${result.durationMs.toFixed(1)}ms`)
+        halLog.log(`[hal/dispatcher] ${task} → WebGPU — ${cellCount} cells in ${result.durationMs.toFixed(1)}ms`)
         return computeResult
       } catch (e) {
-        console.warn(`[hal/dispatcher] WebGPU ${task} failed, falling back to CPU:`, e)
+        halLog.warn(`[hal/dispatcher] WebGPU ${task} failed, falling back to CPU:`, e)
       }
     }
 
@@ -172,11 +173,11 @@ class ComputeDispatcher {
             height: payload.height,
           }
           this.recordStats(task, 'wasm-simd', durationMs, cellCount)
-          console.log(`[hal/dispatcher] ${task} → WASM SIMD — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
+          halLog.log(`[hal/dispatcher] ${task} → WASM SIMD — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
           return computeResult
         }
       } catch (e) {
-        console.warn(`[hal/dispatcher] WASM SIMD ${task} failed, falling back to CPU worker:`, e)
+        halLog.warn(`[hal/dispatcher] WASM SIMD ${task} failed, falling back to CPU worker:`, e)
       }
     }
 
@@ -209,18 +210,18 @@ class ComputeDispatcher {
             height: response.height,
           }
           this.recordStats(task, 'cpu-worker', durationMs, cellCount)
-          console.log(`[hal/dispatcher] ${task} → CPU worker — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
+          halLog.log(`[hal/dispatcher] ${task} → CPU worker — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
           return computeResult
         }
       } catch (e) {
-        console.warn(`[hal/dispatcher] CPU worker ${task} failed:`, e)
+        halLog.warn(`[hal/dispatcher] CPU worker ${task} failed:`, e)
       }
     }
 
     // Last resort: return empty (caller must handle inline)
     const durationMs = performance.now() - start
     this.recordStats(task, 'cpu-inline', durationMs, cellCount)
-    console.warn(`[hal/dispatcher] ${task} → no backend available, returning empty`)
+    halLog.warn(`[hal/dispatcher] ${task} → no backend available, returning empty`)
     return {
       output: new Float32Array(cellCount),
       backend: 'noop',
@@ -234,6 +235,161 @@ class ComputeDispatcher {
   /** Check if WebGPU is available for a given grid size. */
   shouldUseGpu(width: number, height: number): boolean {
     return this.capabilities.webgpu && width * height >= GPU_MIN_CELLS
+  }
+
+  /**
+   * Benchmark a workload across all available backends.
+   *
+   * For each eligible backend, the task is run once to warm up and then
+   * `samples` times. Returns throughput (M cells/s), duration, and
+   * per-sample timings. The `preferred` field is the suggested backend
+   * for this workload.
+   */
+  async benchmark(
+    task: ComputeTask,
+    payload: ComputePayload,
+    samples = 5,
+  ): Promise<{
+    results: Array<{ backend: ComputeBackend; durationMs: number; throughputMCells: number; samples: number[]; error?: string }>
+    preferred: ComputeBackend
+  }> {
+    const results: Awaited<ReturnType<ComputeDispatcher['benchmark']>>['results'] = []
+    const backends: ComputeBackend[] = ['webgpu', 'wasm-simd', 'cpu-worker', 'cpu-inline']
+
+    for (const backend of backends) {
+      if (!this.canRunBackend(backend, task, payload)) continue
+      const timings: number[] = []
+      let error: string | undefined
+
+      try {
+        // Warm-up
+        await this.dispatchBackend(task, payload, backend)
+
+        for (let i = 0; i < samples; i++) {
+          const r = await this.dispatchBackend(task, payload, backend)
+          timings.push(r.durationMs)
+        }
+
+        const avg = timings.reduce((a, b) => a + b, 0) / timings.length
+        const cellCount = payload.width * payload.height
+        const throughputMCells = (cellCount / avg) / 1_000_000
+        results.push({ backend, durationMs: avg, throughputMCells, samples: timings })
+      } catch (e) {
+        error = String(e)
+        results.push({ backend, durationMs: 0, throughputMCells: 0, samples: [], error })
+      }
+    }
+
+    // Preferred backend: fastest above the CPU- (only if no errors)
+    const successful = results.filter((r) => !r.error)
+    const preferred = successful.length > 0
+      ? successful.reduce((a, b) => (a.durationMs <= b.durationMs ? a : b)).backend
+      : 'noop'
+
+    return { results, preferred }
+  }
+
+  /** Dispatch to a specific backend (used for benchmarking). */
+  private async dispatchBackend(task: ComputeTask, payload: ComputePayload, backend: ComputeBackend): Promise<ComputeResult> {
+    const start = performance.now()
+    const cellCount = payload.width * payload.height
+
+    if (backend === 'webgpu') {
+      const kernel = KERNEL_MAP[task] as ComputeKernel
+      const inputs = payload.input2
+        ? (payload.input3 ? [payload.input, payload.input2, payload.input3] : [payload.input, payload.input2])
+        : [payload.input]
+      const result = await gpuCompute.execute(kernel, {
+        width: payload.width,
+        height: payload.height,
+        input: inputs,
+        uniforms: payload.params,
+        ramp: payload.ramp,
+      })
+      return {
+        output: result.output,
+        backend: 'webgpu',
+        durationMs: result.durationMs,
+        task,
+        width: payload.width,
+        height: payload.height,
+      }
+    }
+
+    if (backend === 'wasm-simd') {
+      let output: Float32Array | null = null
+      if (task === 'ndvi' || task === 'ndwi' || task === 'nbr') {
+        if (payload.input && payload.input2) output = wasmBandMath(payload.input, payload.input2)
+      } else if (task === 'slope') {
+        if (payload.input) output = wasmSlope(payload.input, payload.width, payload.height, payload.cellSizeX || 30)
+      } else if (task === 'hillshade') {
+        if (payload.input && payload.params) {
+          output = wasmHillshade(payload.input, payload.width, payload.height, payload.cellSizeX || 30, payload.params[0] || 315, payload.params[1] || 45)
+        }
+      } else if (task === 'anomaly') {
+        if (payload.input) output = wasmBoxBlur(payload.input, payload.width, payload.height)
+      }
+      if (!output) throw new Error('WASM SIMD cannot run this task')
+      return {
+        output,
+        backend: 'wasm-simd',
+        durationMs: performance.now() - start,
+        task,
+        width: payload.width,
+        height: payload.height,
+      }
+    }
+
+    if (backend === 'cpu-worker') {
+      const response = await window.api.invoke('compute:task', {
+        task,
+        payload: {
+          width: payload.width,
+          height: payload.height,
+          input: Array.from(payload.input),
+          input2: payload.input2 ? Array.from(payload.input2) : undefined,
+          input3: payload.input3 ? Array.from(payload.input3) : undefined,
+          params: payload.params ? Array.from(payload.params) : undefined,
+          cellSizeX: payload.cellSizeX,
+          cellSizeY: payload.cellSizeY,
+        },
+      }) as { output: number[]; backend: ComputeBackend; durationMs: number; width: number; height: number } | null
+      if (!response || !response.output) throw new Error('CPU worker returned empty')
+      return {
+        output: new Float32Array(response.output),
+        backend: response.backend || 'cpu-worker',
+        durationMs: performance.now() - start,
+        task,
+        width: response.width,
+        height: response.height,
+      }
+    }
+
+    // cpu-inline / noop
+    return {
+      output: new Float32Array(cellCount),
+      backend: 'noop',
+      durationMs: performance.now() - start,
+      task,
+      width: payload.width,
+      height: payload.height,
+    }
+  }
+
+  private canRunBackend(backend: ComputeBackend, task: ComputeTask, payload: ComputePayload): boolean {
+    const cellCount = payload.width * payload.height
+    switch (backend) {
+      case 'webgpu':
+        return this.capabilities.webgpu && cellCount >= GPU_MIN_CELLS
+      case 'wasm-simd':
+        return this.capabilities.wasmSimd && isWasmReady() && ['ndvi', 'ndwi', 'nbr', 'slope', 'hillshade', 'anomaly'].includes(task)
+      case 'cpu-worker':
+        return this.capabilities.cpuWorker
+      case 'cpu-inline':
+        return true
+      default:
+        return false
+    }
   }
 
   /** Get compute telemetry for HUD display. */

@@ -11,8 +11,7 @@ import { gridMonitor } from './services/grid/grid-monitor'
 import { networkMonitor } from './services/network/network-monitor'
 import { vrManager } from './services/vr/vr-manager'
 import { startClipServer, stopClipServer } from './services/clip-manager'
-
-const isDev = !!process.env['ELECTRON_RENDERER_URL']
+import { isProd, isDev, prodLog } from './utils/is-prod'
 
 // ── Platform-aware memory tiers ──
 // Adjust V8 heap limits and Ollama settings based on platform and available RAM.

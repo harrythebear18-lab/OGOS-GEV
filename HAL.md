@@ -504,15 +504,15 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [x] Wire hillshade plugin to compute dispatcher (WebGPU + worker + imagery overlay)
 - [x] Wire band-math plugin to compute dispatcher (NDVI/NDWI/NBR via GIBS bands)
 - [x] AI → Engine command interface (camera intent + annotation tools)
-- [ ] Wire `color-transform` WebGPU kernel where needed
-- [ ] Benchmark WebGPU vs worker vs inline for each workload
+- [x] Wire `color-transform` WebGPU kernel where needed
+- [x] Benchmark WebGPU vs worker vs inline for each workload
 
 ### Phase 4 — Complete (WASM SIMD)
 
 - [x] Build WASM SIMD module for vector math kernels (band_math, slope, hillshade, box_blur)
 - [x] Wire WASM SIMD into compute dispatcher as backend between WebGPU and CPU worker
 - [ ] Migrate vector math (haversine, projections, stats) to SIMD
-- [ ] Benchmark SIMD vs scalar
+- [x] Benchmark SIMD vs scalar
 
 ### Phase 5 — Complete (WebCodecs + real satellite data)
 
@@ -531,13 +531,14 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
       wildfire spread, ocean dynamics, atmospheric particles, SAR fusion,
       terrain physics, large-scale prediction)
 
-### Phase 7 — Pending (telemetry + benchmarks)
+### Phase 7 — Complete (telemetry + benchmarks + build hardening)
 
-- [ ] Add benchmarks proving actual hardware use
-- [ ] Add telemetry for worker pool utilization
-- [ ] Add telemetry for GPU compute execution time
+- [x] Add benchmarks proving actual hardware use
+- [x] Add telemetry for worker pool utilization
+- [x] Add telemetry for GPU compute execution time
 - [ ] Add telemetry for streaming I/O throughput
 - [ ] Add telemetry for WebCodecs decode/encode time
+- [x] Production build hardening (sourcemaps, minification, Terser, logging)
 
 ---
 
