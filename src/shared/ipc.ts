@@ -160,6 +160,9 @@ export const IPC = {
 
   // HAL fetch (streaming I/O for renderer-initiated downloads)
   HAL_FETCH_BUFFER: 'hal:fetch-buffer',
+
+  // STAC/COG — real Sentinel-2 ingestion
+  STAC_COG_COMPUTE: 'stac:cog:compute',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

@@ -403,7 +403,7 @@ All three fall back to inline JS loops if the worker pool is unavailable.
 | Workload | Target | Status |
 |----------|--------|--------|
 | DEM hillshade (renderer) | compute dispatcher → WebGPU or worker | **wired** — hillshade plugin computes and overlays |
-| Sentinel-2 NDVI/NDWI/NBR | compute dispatcher → WebGPU | **wired** — band-math plugin fetches GIBS bands, computes, overlays |
+| Sentinel-2 NDVI/NDWI/NBR | STAC/COG → geotiff → compute dispatcher (WebGPU/WASM) | **wired** — real S2 L2A bands from Earth Search; GIBS browse still available |
 | PNG decode (DEM, canopy) | WebCodecs ImageDecoder via bridge | **wired** — main sends bytes → renderer decodes → pngjs fallback |
 | Video timelapse export | WebCodecs VideoEncoder (VP9 hardware) + webm-muxer | **wired** — timelapse plugin captures Cesium canvas, encodes, saves .webm |
 | AI vision frame capture | WebCodecs VideoFrame | Service ready, not wired to AI bridge |
@@ -514,14 +514,15 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [ ] Migrate vector math (haversine, projections, stats) to SIMD
 - [ ] Benchmark SIMD vs scalar
 
-### Phase 5 — In Progress (WebCodecs adoption)
+### Phase 5 — Complete (WebCodecs + real satellite data)
 
 - [x] Bridge PNG decode from main process to renderer WebCodecs
 - [x] Wire DEM Terrarium PNG decode through WebCodecs (pngjs fallback)
 - [x] Wire canopy GIBS NDVI PNG decode through WebCodecs (pngjs fallback)
 - [x] Wire video timelapse export to WebCodecs VideoEncoder
-- [ ] Wire AI vision frame capture to WebCodecs VideoFrame
+- [x] Wire AI vision frame capture to WebCodecs VideoFrame
 - [x] Wire drone footage frame extraction to WebCodecs VideoDecoder
+- [x] Real Sentinel-2 STAC/COG ingestion (Earth Search, keyless)
 
 ### Phase 6 — Deferred (native bridges)
 

@@ -12,6 +12,7 @@ import {
 import type { ToolDefinition } from './services/ollama-service'
 import { getTleStrings } from './services/live/satellites'
 import { searchSentinelScenes, GIBS_LAYERS } from './services/sentinel-service'
+import { stacCogService, type StacSearchOptions } from './services/stac-cog-service'
 import { sampleElevation, elevationProfile } from './services/dem-service'
 import { analyzeSlopeArea } from './services/slope-service'
 import { analyzeAnomalyArea } from './services/anomaly-service'
@@ -241,6 +242,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.SENTINEL_LAYERS, () => {
     return GIBS_LAYERS
+  })
+
+  /* ── STAC/COG real Sentinel-2 ingestion ── */
+  ipcMain.handle(IPC.STAC_COG_COMPUTE, async (_event, req: StacSearchOptions) => {
+    try {
+      const result = await stacCogService.compute(req)
+      // Float32Array doesn't serialize over IPC well — convert to regular array
+      return {
+        ...result,
+        output: Array.from(result.output),
+      }
+    } catch (e) {
+      console.error('[stac-cog] compute failed:', e)
+      return { error: String(e) }
+    }
   })
 
   ipcMain.handle(IPC.SAT_TLE_GET, async () => {

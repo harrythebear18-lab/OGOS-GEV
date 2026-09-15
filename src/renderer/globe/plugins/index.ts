@@ -10,6 +10,7 @@ import { volcanoPlugin } from './volcano-plugin'
 import { acousticPlugin } from './acoustic-plugin'
 import { timelapsePlugin } from './timelapse-plugin'
 import { droneFootagePlugin } from './drone-footage-plugin'
+import { sentinelStacPlugin } from './sentinel-stac-plugin'
 import { slopeBandsPlugin } from './slope-plugin'
 import { hillshadePlugin } from './hillshade-plugin'
 import { bandMathPlugin } from './band-math-plugin'
@@ -53,6 +54,7 @@ pluginManager.register([
   acousticPlugin,
   timelapsePlugin,
   droneFootagePlugin,
+  sentinelStacPlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,
@@ -104,6 +106,7 @@ export {
   acousticPlugin,
   timelapsePlugin,
   droneFootagePlugin,
+  sentinelStacPlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,

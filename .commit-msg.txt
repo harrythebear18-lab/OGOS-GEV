@@ -1,49 +1,40 @@
-Add WebCodecs VideoDecoder drone footage frame extraction
+Add real Sentinel-2 STAC/COG ingestion — replaces GIBS browse
 
-Wires the WebCodecs VideoDecoder to a real MP4 demux + frame
-extraction pipeline using mp4box for container demuxing and
-VideoDecoder for hardware-accelerated decode.
+Implements real Sentinel-2 L2A band data ingestion from the public
+(keyless) Element84 Earth Search STAC API. This is the replacement
+for GIBS browse imagery.
 
 Pipeline:
-  MP4 file → mp4box (demux) → EncodedVideoChunk → VideoDecoder
-  (hardware) → VideoFrame → ImageBitmap → thumbnails
+  Renderer: user sets bbox, date range, max cloud, formula
+  Main:     POST to https://earth-search.aws.element84.com/v1/search
+  Main:     select least-cloudy scene from sorted results
+  Main:     open B03/B04/B08/B11 COGs via geotiff (HTTP range)
+  Main:     reproject WGS84 bbox to scene CRS with proj4
+  Main:     read the matching pixel window, resample to 512x512
+  Main:     compute NDVI/NDWI/NBR from real reflectance (DN/10000)
+  Main:     convert window extent back to WGS84 for overlay
+  Main:     return Float32Array + bbox + metadata to renderer
+  Renderer: color-map with formula-specific ramp, overlay on Cesium
 
-The VideoDecoder uses `hardwareAcceleration: 'prefer-hardware'`
-which routes to the GPU's dedicated video decode engine
-(NVDEC / QuickSync / VAAPI) when available.
+Keyless data source:
+  https://earth-search.aws.element84.com/v1/
+  collection: sentinel-2-l2a
 
-This replaces the broken `decodeVideo` in webcodecs.ts which
-tried to feed a raw blob as a single EncodedVideoChunk. That
-approach does not work for real video files because an MP4
-container contains audio, metadata, and multiple frames — not
-a raw Annex-B bitstream.
-
-mp4box provides:
-  - Track metadata (width, height, fps, codec)
-  - Sample list (each sample = one encoded frame)
-  - Sample data extraction
-  - Timestamp / duration / sync (keyframe) info
-
-Features:
-  - Load MP4 file via file picker
-  - Max frames control (1-300)
-  - Sample interval (extract every Nth frame)
-  - Hardware decode status
-  - Thumbnail generation
-  - Real-time progress during extraction
-  - Frame count, video resolution, codec, FPS display
+No API key, no registration, no paid credits.
 
 New files:
-  src/renderer/globe/hal/video-frame-extractor.ts
-  src/renderer/globe/plugins/drone-footage-plugin.ts
+  src/main/services/stac-cog-service.ts     — STAC search + COG read
+  src/renderer/globe/plugins/sentinel-stac-plugin.ts — UI + overlay
 
 Modified:
-  package.json             — added mp4box dependency
-  src/renderer/globe/plugins/index.ts — registered droneFootagePlugin
-  README.md — plugin count 38 → 39, WebCodecs status updated
-  HAL.md — drone footage task marked complete
+  package.json              — added geotiff, proj4
+  src/shared/ipc.ts        — added STAC_COG_COMPUTE channel
+  src/main/ipc-handlers.ts — added stac:cog:compute handler
+  src/renderer/globe/plugins/index.ts — registered sentinelStacPlugin
+  README.md                — plugin count 39 → 40, feature list updated
+  HAL.md                   — Phase 5 marked complete, Sentinel-2 status updated
 
-Plugin count: 38 → 39.
+Plugin count: 39 → 40.
 
 Generated with [Devin](https://devin.ai)
 
