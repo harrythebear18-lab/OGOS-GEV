@@ -1,42 +1,49 @@
-Add WebCodecs VideoEncoder timelapse export — hardware VP9 + WebM muxing
+Add WebCodecs VideoDecoder drone footage frame extraction
 
-Wires the WebCodecs VideoEncoder to a real timelapse export pipeline
-that captures the Cesium canvas and encodes it as a playable WebM
-video file using hardware acceleration.
+Wires the WebCodecs VideoDecoder to a real MP4 demux + frame
+extraction pipeline using mp4box for container demuxing and
+VideoDecoder for hardware-accelerated decode.
 
 Pipeline:
-  Cesium canvas → VideoFrame → VideoEncoder (VP9, hardware) → webm-muxer → .webm
+  MP4 file → mp4box (demux) → EncodedVideoChunk → VideoDecoder
+  (hardware) → VideoFrame → ImageBitmap → thumbnails
 
-The VideoEncoder uses `hardwareAcceleration: 'prefer-hardware'` which
-routes to the GPU's dedicated video engine (NVENC/QuickSync/VAAPI)
-when available, falling back to software encode if not.
+The VideoDecoder uses `hardwareAcceleration: 'prefer-hardware'`
+which routes to the GPU's dedicated video decode engine
+(NVDEC / QuickSync / VAAPI) when available.
 
-The webm-muxer library handles EBML/Matroska container muxing so the
-output is a valid, playable .webm file — not just raw H.264 chunks.
+This replaces the broken `decodeVideo` in webcodecs.ts which
+tried to feed a raw blob as a single EncodedVideoChunk. That
+approach does not work for real video files because an MP4
+container contains audio, metadata, and multiple frames — not
+a raw Annex-B bitstream.
+
+mp4box provides:
+  - Track metadata (width, height, fps, codec)
+  - Sample list (each sample = one encoded frame)
+  - Sample data extraction
+  - Timestamp / duration / sync (keyframe) info
 
 Features:
-  - FPS control (10-60 fps)
-  - Duration control (0 = manual stop, up to 120s)
-  - Quality presets (1/5/10/20 Mbps)
-  - Auto-orbit camera mode (rotates during recording)
-  - Orbit speed control
-  - Keyframe every 2 seconds for seekability
-  - Save to disk via IPC (showSaveDialog)
-  - Live status: frames captured/encoded, elapsed time
+  - Load MP4 file via file picker
+  - Max frames control (1-300)
+  - Sample interval (extract every Nth frame)
+  - Hardware decode status
+  - Thumbnail generation
+  - Real-time progress during extraction
+  - Frame count, video resolution, codec, FPS display
 
 New files:
-  src/renderer/globe/hal/timelapse-exporter.ts  — encoder + muxer
-  src/renderer/globe/plugins/timelapse-plugin.ts — UI controls
+  src/renderer/globe/hal/video-frame-extractor.ts
+  src/renderer/globe/plugins/drone-footage-plugin.ts
 
 Modified:
-  src/shared/ipc.ts           — added EXPORT_VIDEO channel
-  src/main/ipc-handlers.ts    — added export:video handler (save .webm)
-  src/renderer/globe/plugins/index.ts — registered timelapsePlugin
-  src/renderer/globe/plugins/plugin-manager.ts — added disabled to control specs
-  README.md — plugin count 37 → 38, feature list updated
-  HAL.md — Video timelapse export marked wired
+  package.json             — added mp4box dependency
+  src/renderer/globe/plugins/index.ts — registered droneFootagePlugin
+  README.md — plugin count 38 → 39, WebCodecs status updated
+  HAL.md — drone footage task marked complete
 
-Plugin count: 37 → 38.
+Plugin count: 38 → 39.
 
 Generated with [Devin](https://devin.ai)
 

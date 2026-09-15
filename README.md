@@ -54,7 +54,7 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **UI:** React 18 + TypeScript
 - **3D globe:** CesiumJS
 - **GPU compute:** WebGPU (7 WGSL compute kernels — wired to slope/anomaly via compute dispatcher)
-- **Hardware codecs:** WebCodecs (ImageDecoder wired to PNG decode via bridge, VideoEncoder/Decoder probed — not yet wired to production)
+- **Hardware codecs:** WebCodecs (ImageDecoder wired to PNG decode via bridge, VideoEncoder wired to timelapse, VideoDecoder wired to drone footage)
 - **CPU parallelism:** worker_threads + SharedArrayBuffer (worker pool — wired to DEM slope/runoff/anomaly, fallback for compute dispatcher)
 - **Streaming I/O:** ReadableStream pipelines with backpressure (wired to DEM/canopy/tile fetches)
 - **SGP4 / orbital math:** `satellite.js`
@@ -74,7 +74,7 @@ the full picture.
 | WebGPU compute | GPU cores (NVIDIA/AMD/Intel) — 7 WGSL kernels | **wired** (slope, anomaly via compute dispatcher) |
 | Worker threads | OS threads via worker_threads + SharedArrayBuffer | **wired** (slope, runoff, anomaly, dispatcher fallback) |
 | Streaming I/O | ReadableStream backpressure | **wired** (DEM, canopy, tile cache) |
-| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | **wired** (PNG decode via bridge, video pending) |
+| WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | **wired** (PNG decode, timelapse VP9 encode, drone footage decode) |
 | WASM SIMD | 128-bit CPU vector units | **active** — 4 kernels (band_math, slope, hillshade, box_blur) |
 | CUDA native | NVIDIA GPU compute (heavy workloads) | deferred |
 | OpenXR native | Meta Quest 3S PC Link | scaffold (unbuilt) |
@@ -206,7 +206,7 @@ osint-sentinel-workstation/
 
 ## Plugin architecture
 
-All 38 plugins follow a unified interface (`EarthEnginePlugin`):
+All 39 plugins follow a unified interface (`EarthEnginePlugin`):
 register / unregister / update / getStats / getControls / onControl.
 
 | Tier | Category | Plugins |
@@ -326,7 +326,7 @@ Also in v0.7:
 - Analyst engine, action runner, detection overlay, context store, annotation resolver
 - Hydrology rewritten with proper D8 + Priority-Flood + SCS Curve Number
 - Canopy rewritten with GIBS NDVI tile fetch + DEM roughness canopy height
-- All 38 plugins active with UI controls
+- All 39 plugins active with UI controls
 
 **v0.5 — Live feed hardening**
 

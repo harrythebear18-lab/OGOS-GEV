@@ -331,7 +331,7 @@ Hardware-accelerated video/image encode/decode via the WebCodecs API
 - PNG/JPEG decode (replaces pngjs pure-JS decode)
 - Satellite imagery timelapse export
 - Screen capture for AI vision
-- Drone footage frame extraction
+- Drone footage frame extraction (MP4 → VideoDecoder → canvas)
 - AI vision frame extraction
 
 ---
@@ -521,7 +521,7 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [x] Wire canopy GIBS NDVI PNG decode through WebCodecs (pngjs fallback)
 - [x] Wire video timelapse export to WebCodecs VideoEncoder
 - [ ] Wire AI vision frame capture to WebCodecs VideoFrame
-- [ ] Wire drone footage frame extraction to WebCodecs VideoDecoder
+- [x] Wire drone footage frame extraction to WebCodecs VideoDecoder
 
 ### Phase 6 — Deferred (native bridges)
 
