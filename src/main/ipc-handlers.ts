@@ -440,6 +440,19 @@ export function registerIpcHandlers(): void {
     return { path: filePath }
   })
 
+  ipcMain.handle(IPC.EXPORT_VIDEO, async (_event, data: { arrayBuffer: ArrayBuffer; extension: string }) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+      title: 'Export Timelapse Video',
+      defaultPath: `timelapse.${data?.extension || 'webm'}`,
+      filters: [{ name: 'WebM Video', extensions: ['webm'] }],
+    })
+    if (canceled || !filePath) return null
+    if (!data?.arrayBuffer) return null
+    fs.writeFileSync(filePath, Buffer.from(data.arrayBuffer))
+    return { path: filePath }
+  })
+
   ipcMain.handle(IPC.IMPORT_KML, async () => {
     const win = BrowserWindow.getFocusedWindow()
     const { canceled, filePaths } = await dialog.showOpenDialog(win!, {

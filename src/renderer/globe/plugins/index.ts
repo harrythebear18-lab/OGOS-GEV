@@ -8,6 +8,7 @@ import { weatherPlugin } from './weather-plugin'
 import { earthquakesPlugin } from './earthquakes-plugin'
 import { volcanoPlugin } from './volcano-plugin'
 import { acousticPlugin } from './acoustic-plugin'
+import { timelapsePlugin } from './timelapse-plugin'
 import { slopeBandsPlugin } from './slope-plugin'
 import { hillshadePlugin } from './hillshade-plugin'
 import { bandMathPlugin } from './band-math-plugin'
@@ -49,6 +50,7 @@ pluginManager.register([
   earthquakesPlugin,
   volcanoPlugin,
   acousticPlugin,
+  timelapsePlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,
@@ -98,6 +100,7 @@ export {
   earthquakesPlugin,
   volcanoPlugin,
   acousticPlugin,
+  timelapsePlugin,
   slopeBandsPlugin,
   hillshadePlugin,
   bandMathPlugin,

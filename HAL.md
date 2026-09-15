@@ -405,7 +405,7 @@ All three fall back to inline JS loops if the worker pool is unavailable.
 | DEM hillshade (renderer) | compute dispatcher → WebGPU or worker | **wired** — hillshade plugin computes and overlays |
 | Sentinel-2 NDVI/NDWI/NBR | compute dispatcher → WebGPU | **wired** — band-math plugin fetches GIBS bands, computes, overlays |
 | PNG decode (DEM, canopy) | WebCodecs ImageDecoder via bridge | **wired** — main sends bytes → renderer decodes → pngjs fallback |
-| Video timelapse export | WebCodecs VideoEncoder | Service ready, not wired to export |
+| Video timelapse export | WebCodecs VideoEncoder (VP9 hardware) + webm-muxer | **wired** — timelapse plugin captures Cesium canvas, encodes, saves .webm |
 | AI vision frame capture | WebCodecs VideoFrame | Service ready, not wired to AI bridge |
 | WASM SIMD vector math | WASM SIMD module (f32x4) | **wired** — band_math (SIMD), slope, hillshade, box_blur kernels compiled and dispatched |
 | CUDA heavy workloads | Native CUDA addon | Deferred |
@@ -519,7 +519,7 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [x] Bridge PNG decode from main process to renderer WebCodecs
 - [x] Wire DEM Terrarium PNG decode through WebCodecs (pngjs fallback)
 - [x] Wire canopy GIBS NDVI PNG decode through WebCodecs (pngjs fallback)
-- [ ] Wire video timelapse export to WebCodecs VideoEncoder
+- [x] Wire video timelapse export to WebCodecs VideoEncoder
 - [ ] Wire AI vision frame capture to WebCodecs VideoFrame
 - [ ] Wire drone footage frame extraction to WebCodecs VideoDecoder
 

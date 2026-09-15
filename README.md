@@ -23,6 +23,7 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **Canopy / vegetation** — GIBS MODIS NDVI 8-day composite, 7-class vegetation mapping
 - **Volcano monitoring** — NASA EONET + USGS + Smithsonian GVP live feeds, ash/SO2 dispersion simulation
 - **Acoustic propagation** — ISO 9613-1 outdoor sound modeling on real terrain with live weather
+- **Timelapse export** — WebCodecs VideoEncoder (hardware VP9) with WebM muxing
   (dense forest → barren → water), DEM roughness-based canopy height estimation
   (pseudo-LiDAR), convex-hull zone polygons, grid-based spatial clustering.
 - **SAR / mission tooling** — search zones, remains corridor (fall → flow → find),
@@ -205,7 +206,7 @@ osint-sentinel-workstation/
 
 ## Plugin architecture
 
-All 37 plugins follow a unified interface (`EarthEnginePlugin`):
+All 38 plugins follow a unified interface (`EarthEnginePlugin`):
 register / unregister / update / getStats / getControls / onControl.
 
 | Tier | Category | Plugins |
@@ -325,7 +326,7 @@ Also in v0.7:
 - Analyst engine, action runner, detection overlay, context store, annotation resolver
 - Hydrology rewritten with proper D8 + Priority-Flood + SCS Curve Number
 - Canopy rewritten with GIBS NDVI tile fetch + DEM roughness canopy height
-- All 37 plugins active with UI controls
+- All 38 plugins active with UI controls
 
 **v0.5 — Live feed hardening**
 

@@ -125,6 +125,7 @@ export const IPC = {
   EXPORT_GEOJSON: 'export:geojson',
   EXPORT_KML: 'export:kml',
   EXPORT_PNG: 'export:png',
+  EXPORT_VIDEO: 'export:video',
   IMPORT_KML: 'import:kml',
   CASE_PROFILES: 'case:profiles',
 

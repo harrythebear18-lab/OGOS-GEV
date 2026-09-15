@@ -53,6 +53,7 @@ export interface PluginToggleSpec {
   id: string
   label: string
   value: boolean
+  disabled?: boolean
 }
 
 export interface PluginSliderSpec {
@@ -64,6 +65,7 @@ export interface PluginSliderSpec {
   max: number
   step?: number
   unit?: string
+  disabled?: boolean
 }
 
 export interface PluginSelectSpec {
@@ -72,6 +74,7 @@ export interface PluginSelectSpec {
   label: string
   value: string
   options: { label: string; value: string }[]
+  disabled?: boolean
 }
 
 export interface PluginInputSpec {
