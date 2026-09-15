@@ -1,42 +1,19 @@
-Production hardening + compute benchmark harness (checklist items 18/19)
+Exclude sourcemaps from packaged ASAR
 
-Build hardening:
-  - electron.vite.config.ts: explicit `sourcemap: isProd ? false : 'hidden'`
-    for main, preload, and renderer
-  - Terser minification with `mangle.toplevel: true`, `toplevel: true`,
-    `compress.passes: 3`, `drop_console` for log/info/warn/debug
-  - `build:prod` / `dist:*` scripts run `NODE_ENV=production`
-  - Production gating: FPS tracking only in `isDevRenderer`
-  - `src/main/utils/is-prod.ts` and `src/renderer/globe/hal/is-prod.ts`
-    for shared env gating
+Verification of production build revealed that `node_modules/**/*.map`
+files were being bundled into the ASAR. Added `!**/*.map` and
+`!**/*.d.ts.map` to electron-builder `files` so packaged releases do
+not ship third-party sourcemaps.
 
-HAL compute benchmark harness:
-  - New `src/renderer/globe/hal/compute-bench.ts`
-    - inline JS reference kernels (ndvi, ndwi, nbr, slope, hillshade, anomaly)
-    - `makeBenchPayload()`
-    - `benchmarkWorkload()`
-    - `downloadReport()` for JSON export
-  - `compute-dispatcher.ts`:
-    - Uses `selectBackendPriority()` with thresholds:
-        < 128×128   → cpu-inline
-        < 512×512   → wasm-simd → cpu-worker → cpu-inline
-        >= 512×512  → webgpu → wasm-simd → cpu-worker → cpu-inline
-    - `dispatchBackend()` now runs real inline JS via `computeInline()`
-    - `benchmark()` tests all four backends including inline
+Verified:
+  - `npm run build:prod` succeeds
+  - `out/` contains no `.map` files
+  - `out/main/index.js` is minified (1-line, mangled identifiers)
+  - `out/renderer/assets` contains no `console.log`/`warn`/`info`/`debug`
+  - `npx electron-builder --win dir` packages successfully
+  - `app.asar` contains no `.map` files after repackage
 
-Benchmark plugin:
-  - Uses `compute-bench.makeBenchPayload()`
-  - Added "Download JSON" button that exports `BenchReport[]`
-  - Maps `cpu-inline`/`cpu-worker` to `inline`/`worker` in reports
-
-Modified:
-  electron.vite.config.ts
-  src/renderer/globe/Globe.tsx
-  src/renderer/globe/hal/compute-dispatcher.ts
-  src/renderer/globe/plugins/benchmark-plugin.ts
-  src/renderer/globe/hal/compute-bench.ts (new)
-  README.md
-  HAL.md
+No code changes.
 
 Generated with [Devin](https://devin.ai)
 
