@@ -74,7 +74,7 @@ the full picture.
 | Worker threads | OS threads via worker_threads + SharedArrayBuffer | **wired** (slope, runoff, anomaly, dispatcher fallback) |
 | Streaming I/O | ReadableStream backpressure | **wired** (DEM, canopy, tile cache) |
 | WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | **wired** (PNG decode via bridge, video pending) |
-| WASM SIMD | 128-bit CPU vector units | probed, **no module built** |
+| WASM SIMD | 128-bit CPU vector units | **active** — 4 kernels (band_math, slope, hillshade, box_blur) |
 | CUDA native | NVIDIA GPU compute (heavy workloads) | deferred |
 | OpenXR native | Meta Quest 3S PC Link | scaffold (unbuilt) |
 
@@ -82,7 +82,7 @@ HAL probes on startup:
 ```
 [hal] CPU: 16 cores, 32768/65536 MB free
 [hal] Worker threads: yes, SAB: yes
-[hal] Renderer: webgpu=true, webcodecs=true, wasmSimd=false
+[hal] Renderer: webgpu=true, webcodecs=true, wasmSimd=true
 [hal/gpu-compute] WebGPU device: nvidia
 [hal/gpu-compute] compiled 7 compute kernels
 ```
@@ -307,7 +307,7 @@ Compiled but **not yet wired to production**:
 - Hillshade worker (built, not dispatched)
 
 Not yet built:
-- WASM SIMD module (probed only)
+- WASM SIMD module (4 kernels: band_math, slope, hillshade, box_blur)
 - CUDA native addon (deferred)
 - OpenXR native addon (scaffold exists, build needs Visual Studio C++)
 

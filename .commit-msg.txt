@@ -1,40 +1,53 @@
-Add acoustic propagation plugin — ISO 9613-1 outdoor sound modeling on real terrain
+Add WASM SIMD compute backend — f32x4 vector kernels
 
-Planetary acoustic simulator using real terrain, real weather, and
-ISO 9613-1 atmospheric absorption physics.
+Real WebAssembly SIMD module compiled from WAT source, wired into
+the compute dispatcher as a backend between WebGPU and CPU worker.
 
-ISO 9613-1 propagation model:
-  Lp = Lw - A_div - A_atm - A_gr - A_bar + D
+Kernels (4):
+  band_math   — (A - B) / (A + B)  [NDVI, NDWI, NBR]  (f32x4 SIMD)
+  slope       — Horn's method, gradient magnitude     (scalar f32)
+  hillshade   — slope + aspect → shading               (scalar f32)
+  box_blur    — 3x3 box filter [anomaly detection]    (scalar f32)
 
-  A_div = 20*log10(r) + 11        geometric divergence (spherical)
-  A_atm = alpha(f,T,RH,P) * r     atmospheric absorption (per band)
-  A_gr  = ground effect           source/receiver height + ground type
-  A_bar = barrier/terrain         DEM line-of-sight shadow (Maekawa)
-  D     = directivity             speaker H/V pattern + rotation
+The band_math kernel uses v128.load / v128.store and f32x4
+arithmetic to process 4 floats per iteration. The slope and
+hillshade kernels use scalar f32 (3x3 neighborhood makes SIMD
+loads impractical) but still benefit from WASM's native execution
+and avoid JS engine overhead.
 
-Physics implemented:
-  - ISO 9613-1 atmospheric absorption (oxygen + nitrogen relaxation,
-    classical thermal/viscous, temperature/humidity/pressure dependent)
-  - Spherical geometric divergence (6 dB per doubling)
-  - Ground effect (hard/porous/mixed, path-length interference)
-  - Terrain barrier attenuation (DEM line-of-sight, Maekawa formula)
-  - Speaker directivity (horizontal off-axis attenuation)
-  - Wind refraction (downwind enhancement, upwind shadow zones)
+Hillshade trig strategy: WASM has no sin/cos/atan. Instead, the 4
+sun constants (cos_zenith, sin_zenith, cos_azimuth, sin_azimuth)
+are precomputed in JS and passed as f32 parameters. Per-pixel
+cos(slope), sin(slope), cos(aspect), sin(aspect) are computed
+algebraically:
+  cos(atan(x)) = 1/sqrt(1+x²)
+  sin(atan(x)) = x/sqrt(1+x²)
+  cos(aspect) = -dzdx/r, sin(aspect) = dzdy/r
 
-Data sources (all keyless):
-  - DEM: AWS Terrarium tiles (terrain shadowing)
-  - Weather: Open-Meteo (temperature, humidity, wind, pressure)
-  - Ground type: user-selectable (hard/porous/mixed)
+Build pipeline:
+  scripts/compile-wasm.mjs — WAT → WASM via wabt
+  npm run compile:wasm — standalone compile
+  npm run build — compile:wasm runs before electron-vite build
+  simd-kernels.wasm (1514 bytes) served from public/ at runtime
 
-Plugin UI:
-  - Place Source button → click on globe to drop speaker
-  - Lw (power), frequency (octave bands), height, H/V coverage,
-    rotation, ground type controls
-  - Compute SPL Map → 256x256 grid → color-mapped heatmap overlay
-  - Wind direction arrow rendered from source
-  - Multi-source energy summation (multiple speakers)
+Dispatcher routing (priority order):
+  1. WebGPU (if available + grid large enough)
+  2. WASM SIMD (if SIMD-eligible task: ndvi, ndwi, nbr, slope, hillshade, anomaly)
+  3. CPU worker pool (worker_threads via IPC)
+  4. No-op (return empty)
 
-Plugin count: 36 → 37.
+New files:
+  src/renderer/globe/hal/wasm/simd-kernels.wat  (WAT source)
+  src/renderer/globe/hal/wasm/simd-kernels.wasm (compiled binary)
+  src/renderer/globe/hal/wasm/wasm-loader.ts   (TypeScript loader + wrappers)
+  scripts/compile-wasm.mjs                      (build script)
+
+Modified:
+  src/renderer/globe/hal/compute-dispatcher.ts  (WASM backend wired in)
+  src/shared/compute-contract.ts                (added 'wasm-simd' backend type)
+  package.json                                  (compile:wasm script + wabt devDep)
+  README.md                                     (WASM SIMD status updated)
+  HAL.md                                        (Phase 4 marked complete)
 
 Generated with [Devin](https://devin.ai)
 

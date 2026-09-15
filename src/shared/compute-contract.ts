@@ -31,6 +31,7 @@ export type ComputeTask =
 
 export type ComputeBackend =
   | 'webgpu'       // GPU compute shader (WGSL) — thousands of cores
+  | 'wasm-simd'    // WebAssembly f32x4 SIMD — 4-wide vector units
   | 'cpu-worker'   // OS thread via worker_threads — real CPU parallelism
   | 'cpu-inline'   // Main thread JS — last resort fallback
   | 'noop'         // No-op (grid too small or feature disabled)

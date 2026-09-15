@@ -20,6 +20,14 @@
 import { gpuCompute, type ComputeKernel } from './gpu-compute'
 import { webCodecs } from './webcodecs'
 import {
+  initWasmSimd,
+  isWasmReady,
+  wasmBandMath,
+  wasmSlope,
+  wasmHillshade,
+  wasmBoxBlur,
+} from './wasm/wasm-loader'
+import {
   type ComputeTask,
   type ComputePayload,
   type ComputeResult,
@@ -64,6 +72,15 @@ class ComputeDispatcher {
       this.capabilities.wasmSimd = true
     } catch {
       this.capabilities.wasmSimd = false
+    }
+
+    // Load the full WASM SIMD kernel module (band_math, slope, hillshade, box_blur)
+    if (this.capabilities.wasmSimd) {
+      const loaded = await initWasmSimd()
+      if (!loaded) {
+        this.capabilities.wasmSimd = false
+        console.warn('[hal/dispatcher] WASM SIMD probe passed but kernel module failed to load')
+      }
     }
 
     console.log(`[hal/dispatcher] backends: webgpu=${this.capabilities.webgpu}, cpuWorker=${this.capabilities.cpuWorker}, wasmSimd=${this.capabilities.wasmSimd}, webcodecs=${this.capabilities.webcodecs}`)
@@ -114,6 +131,52 @@ class ComputeDispatcher {
         return computeResult
       } catch (e) {
         console.warn(`[hal/dispatcher] WebGPU ${task} failed, falling back to CPU:`, e)
+      }
+    }
+
+    // Try WASM SIMD backend (faster than CPU worker for SIMD-eligible tasks)
+    if (this.capabilities.wasmSimd && isWasmReady()) {
+      try {
+        let output: Float32Array | null = null
+
+        if (task === 'ndvi' || task === 'ndwi' || task === 'nbr') {
+          if (payload.input && payload.input2) {
+            output = wasmBandMath(payload.input, payload.input2)
+          }
+        } else if (task === 'slope') {
+          if (payload.input) {
+            const cellSize = payload.cellSizeX || 30
+            output = wasmSlope(payload.input, payload.width, payload.height, cellSize)
+          }
+        } else if (task === 'hillshade') {
+          if (payload.input && payload.params) {
+            const cellSize = payload.cellSizeX || 30
+            const azimuth = payload.params[0] || 315
+            const elevation = payload.params[1] || 45
+            output = wasmHillshade(payload.input, payload.width, payload.height, cellSize, azimuth, elevation)
+          }
+        } else if (task === 'anomaly') {
+          if (payload.input) {
+            output = wasmBoxBlur(payload.input, payload.width, payload.height)
+          }
+        }
+
+        if (output) {
+          const durationMs = performance.now() - start
+          const computeResult: ComputeResult = {
+            output,
+            backend: 'wasm-simd',
+            durationMs,
+            task,
+            width: payload.width,
+            height: payload.height,
+          }
+          this.recordStats(task, 'wasm-simd', durationMs, cellCount)
+          console.log(`[hal/dispatcher] ${task} → WASM SIMD — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
+          return computeResult
+        }
+      } catch (e) {
+        console.warn(`[hal/dispatcher] WASM SIMD ${task} failed, falling back to CPU worker:`, e)
       }
     }
 
@@ -182,6 +245,7 @@ class ComputeDispatcher {
   getBackendSummary(): Record<ComputeBackend, number> {
     const summary: Record<ComputeBackend, number> = {
       webgpu: 0,
+      'wasm-simd': 0,
       'cpu-worker': 0,
       'cpu-inline': 0,
       noop: 0,

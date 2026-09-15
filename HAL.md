@@ -154,7 +154,7 @@ over NVIDIA-only CUDA for the initial implementation.
 | 2 | Worker threads | OS threads via worker_threads | Main process (Node) | Active — 3 workers, pool initialized |
 | 3 | Streaming I/O | Network stack, disk cache, OS read-ahead | Main process (Node) | Active — fetchToBuffer + fetchToDisk |
 | 4 | WebCodecs | Hardware video/image codecs (NVENC/QuickSync/VAAPI) | Renderer (Chromium) | Active — ImageDecoder + VideoEncoder/Decoder |
-| 5 | WASM SIMD | 128-bit CPU vector units | Both | Probed (not yet used) — module not built |
+| 5 | WASM SIMD | 128-bit CPU vector units | Both | Active — 4 kernels (band_math, slope, hillshade, box_blur) |
 | 6 | CUDA native | NVIDIA GPU compute | Main process (native addon) | Deferred |
 | 7 | OpenXR native | Meta Quest 3S PC Link | Main process (native addon) | Scaffold — build fails (needs VS C++) |
 
@@ -163,7 +163,7 @@ over NVIDIA-only CUDA for the initial implementation.
 ```
 [hal] CPU: 16 cores, 32768/65536 MB free
 [hal] Worker threads: yes, SAB: yes
-[hal] Renderer: webgpu=true, webcodecs=true, wasmSimd=false
+[hal] Renderer: webgpu=true, webcodecs=true, wasmSimd=true
 [hal/gpu-compute] WebGPU device: nvidia
 [hal/gpu-compute] compiled 7 compute kernels
 [hal/webcodecs] available: true
@@ -407,7 +407,7 @@ All three fall back to inline JS loops if the worker pool is unavailable.
 | PNG decode (DEM, canopy) | WebCodecs ImageDecoder via bridge | **wired** — main sends bytes → renderer decodes → pngjs fallback |
 | Video timelapse export | WebCodecs VideoEncoder | Service ready, not wired to export |
 | AI vision frame capture | WebCodecs VideoFrame | Service ready, not wired to AI bridge |
-| WASM SIMD vector math | WASM SIMD module | Not built |
+| WASM SIMD vector math | WASM SIMD module (f32x4) | **wired** — band_math (SIMD), slope, hillshade, box_blur kernels compiled and dispatched |
 | CUDA heavy workloads | Native CUDA addon | Deferred |
 | OpenXR VR | Native OpenXR addon | Scaffold — build fails (needs VS C++) |
 
@@ -507,9 +507,10 @@ Worker pool stats endpoint (`hal:worker-stats`) returns:
 - [ ] Wire `color-transform` WebGPU kernel where needed
 - [ ] Benchmark WebGPU vs worker vs inline for each workload
 
-### Phase 4 — Pending (WASM SIMD)
+### Phase 4 — Complete (WASM SIMD)
 
-- [ ] Build WASM SIMD module for vector math kernels
+- [x] Build WASM SIMD module for vector math kernels (band_math, slope, hillshade, box_blur)
+- [x] Wire WASM SIMD into compute dispatcher as backend between WebGPU and CPU worker
 - [ ] Migrate vector math (haversine, projections, stats) to SIMD
 - [ ] Benchmark SIMD vs scalar
 
