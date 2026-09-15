@@ -22,14 +22,14 @@ export default defineConfig({
       },
     },
     build: {
-      sourcemap: !isProd, // no sourcemaps in production
+      sourcemap: isProd ? false : 'hidden',
       minify: isProd ? 'terser' : false,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
         output: {
           format: 'cjs',
           entryFileNames: '[name].js',
-          ...(isProd ? { plugins: [terser({ ...prodTerserOptions() })] } : {}),
+          ...(isProd ? { plugins: [terser({ ...prodTerserOptions(), toplevel: true, module: true })] } : {}),
         },
       },
     },
@@ -45,14 +45,14 @@ export default defineConfig({
       },
     },
     build: {
-      sourcemap: !isProd,
+      sourcemap: isProd ? false : 'hidden',
       minify: isProd ? 'terser' : false,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
         output: {
           format: 'cjs',
           entryFileNames: '[name].js',
-          ...(isProd ? { plugins: [terser({ ...prodTerserOptions() })] } : {}),
+          ...(isProd ? { plugins: [terser({ ...prodTerserOptions(), toplevel: true, module: true })] } : {}),
         },
       },
     },
@@ -88,7 +88,7 @@ export default defineConfig({
       ],
     },
     build: {
-      sourcemap: !isProd,
+      sourcemap: isProd ? false : 'hidden',
       minify: isProd ? 'terser' : false,
       terserOptions: isProd ? {
         ...prodTerserOptions(),
@@ -123,14 +123,17 @@ export default defineConfig({
  */
 function prodTerserOptions() {
   return {
+    toplevel: true,
     compress: {
       drop_console: ['log', 'info', 'warn', 'debug'],
       drop_debugger: true,
-      passes: 2,
+      passes: 3,
+      booleans_as_integers: false,
     },
     mangle: {
       properties: false, // avoid breaking Cesium property access
-      reserved: ['cesium', 'Cesium', 'window', 'document'],
+      reserved: ['cesium', 'Cesium', 'window', 'document', 'exports', 'require'],
+      toplevel: true,
     },
     format: {
       comments: false,

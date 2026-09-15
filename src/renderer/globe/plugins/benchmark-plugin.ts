@@ -10,6 +10,7 @@
 import * as Cesium from 'cesium'
 import type { EarthEnginePlugin, PluginContext, PluginStats, PluginControlSpec } from './plugin-manager'
 import { computeDispatcher } from '../hal/compute-dispatcher'
+import { makeBenchPayload, downloadReport, type BenchReport } from '../hal/compute-bench'
 import type { ComputeTask, ComputePayload } from '@shared/compute-contract'
 
 interface BenchmarkRun {
@@ -60,6 +61,7 @@ export class BenchmarkPlugin implements EarthEnginePlugin {
     return [
       { type: 'button', id: 'run', label: this.running ? 'Running...' : 'Run Benchmarks', variant: 'primary', disabled: this.running },
       { type: 'button', id: 'clear', label: 'Clear Results', variant: 'danger', disabled: this.runs.length === 0 },
+      { type: 'button', id: 'download', label: 'Download JSON', variant: 'default', disabled: this.runs.length === 0 },
       { type: 'separator', id: 'sep1' },
       { type: 'display', id: 'fps', label: 'Cesium FPS', value: this.cesiumFps.toFixed(0), color: this.cesiumFps > 50 ? '#4aff8a' : this.cesiumFps > 25 ? '#ffaa00' : '#ff4a4a' },
       { type: 'display', id: 'summary', label: 'Fastest', value: this.getFastestSummary(), color: '#4affd4' },
@@ -79,6 +81,8 @@ export class BenchmarkPlugin implements EarthEnginePlugin {
     } else if (id === 'clear') {
       this.runs = []
       this.status = { count: 0, status: 'nominal' }
+    } else if (id === 'download') {
+      this.downloadJson()
     }
   }
 
@@ -89,7 +93,7 @@ export class BenchmarkPlugin implements EarthEnginePlugin {
     this.status = { count: 0, status: 'loading' }
 
     for (const w of WORKLOADS) {
-      const payload = this.makePayload(w.task, w.width, w.height)
+      const payload = makeBenchPayload(w.task, w.width, w.height)
       const run = await this.benchmarkOne(w.label, w.task, payload)
       this.runs.push(run)
       this.status = { count: this.runs.length, status: 'loading' }
@@ -130,30 +134,37 @@ export class BenchmarkPlugin implements EarthEnginePlugin {
     }
   }
 
-  private makePayload(task: ComputeTask, width: number, height: number): ComputePayload {
-    const cellCount = width * height
-    if (task === 'ndvi' || task === 'ndwi' || task === 'nbr') {
-      const a = new Float32Array(cellCount)
-      const b = new Float32Array(cellCount)
-      for (let i = 0; i < cellCount; i++) {
-        a[i] = Math.random() * 0.4 + 0.1
-        b[i] = Math.random() * 0.5 + 0.1
-      }
-      return { width, height, input: a, input2: b }
-    }
+  private downloadJson(): void {
+    const reports: BenchReport[] = this.runs.map((run) => ({
+      workload: run.workload,
+      task: this.guessTask(run.workload),
+      width: run.width,
+      height: run.height,
+      cesiumFps: run.cesiumFps,
+      results: run.results.map((r) => ({
+        backend: this.mapBackend(r.backend),
+        durationMs: r.durationMs,
+        throughputMCells: r.throughputMCells,
+        samples: [],
+        error: r.error,
+      })),
+      preferred: this.mapBackend(run.preferred),
+      generatedAt: new Date().toISOString(),
+    }))
+    downloadReport(reports)
+  }
 
-    const dem = new Float32Array(cellCount)
-    for (let i = 0; i < cellCount; i++) {
-      dem[i] = Math.random() * 100
-    }
-    if (task === 'slope') {
-      return { width, height, input: dem, cellSizeX: 30, cellSizeY: 30 }
-    }
-    if (task === 'hillshade') {
-      return { width, height, input: dem, cellSizeX: 30, cellSizeY: 30, params: new Float32Array([315, 45]) }
-    }
-    // anomaly
-    return { width, height, input: dem }
+  private guessTask(workload: string): ComputeTask {
+    const name = workload.split('_')[0].toLowerCase()
+    return name as ComputeTask
+  }
+
+  private mapBackend(b: string): 'inline' | 'worker' | 'wasm-simd' | 'webgpu' {
+    if (b === 'cpu-inline') return 'inline'
+    if (b === 'cpu-worker') return 'worker'
+    if (b === 'wasm-simd') return 'wasm-simd'
+    if (b === 'webgpu') return 'webgpu'
+    return 'inline'
   }
 
   private getFastestSummary(): string {

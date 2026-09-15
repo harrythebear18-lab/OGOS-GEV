@@ -1,49 +1,42 @@
-Production build hardening + HAL benchmark plugin (items 18 + 19)
+Production hardening + compute benchmark harness (checklist items 18/19)
 
-Production build hardening
-  - electron.vite.config.ts now gates sourcemaps, minification, and
-    Terser on `NODE_ENV=production`
-  - Terser drops console.log/info/warn/debug in production builds
-    while preserving console.error for diagnostics
-  - Added `build:prod` and updated dist:* scripts to run production
-    builds before packaging
-  - Added `src/main/utils/is-prod.ts` for main-process env gating
-  - Added `src/renderer/globe/hal/is-prod.ts` for HAL + plugin
-    runtime log suppression
-  - Replaced console.log/warn in `compute-dispatcher.ts` with `halLog`
-  - Main `index.ts` now imports `isProd` / `isDev` from `utils/is-prod`
+Build hardening:
+  - electron.vite.config.ts: explicit `sourcemap: isProd ? false : 'hidden'`
+    for main, preload, and renderer
+  - Terser minification with `mangle.toplevel: true`, `toplevel: true`,
+    `compress.passes: 3`, `drop_console` for log/info/warn/debug
+  - `build:prod` / `dist:*` scripts run `NODE_ENV=production`
+  - Production gating: FPS tracking only in `isDevRenderer`
+  - `src/main/utils/is-prod.ts` and `src/renderer/globe/hal/is-prod.ts`
+    for shared env gating
 
-HAL Benchmark plugin
-  - New plugin: `src/renderer/globe/plugins/benchmark-plugin.ts`
-  - New dispatcher method: `computeDispatcher.benchmark()` runs each
-    workload on every available backend (WebGPU, WASM SIMD, CPU worker)
-  - Reports per-backend:
-      - average duration (ms)
-      - throughput (M cells/s)
-      - individual sample timings
-      - Cesium FPS during the run
-  - Preferred backend automatically selected from fastest successful run
-  - Workloads: NDVI 256/512, slope 512, hillshade 512, anomaly 256/1024
-  - FPS tracking added in `Globe.tsx` via `scene.postRender`
-  - Plugin registered and exported in `src/renderer/globe/plugins/index.ts`
+HAL compute benchmark harness:
+  - New `src/renderer/globe/hal/compute-bench.ts`
+    - inline JS reference kernels (ndvi, ndwi, nbr, slope, hillshade, anomaly)
+    - `makeBenchPayload()`
+    - `benchmarkWorkload()`
+    - `downloadReport()` for JSON export
+  - `compute-dispatcher.ts`:
+    - Uses `selectBackendPriority()` with thresholds:
+        < 128×128   → cpu-inline
+        < 512×512   → wasm-simd → cpu-worker → cpu-inline
+        >= 512×512  → webgpu → wasm-simd → cpu-worker → cpu-inline
+    - `dispatchBackend()` now runs real inline JS via `computeInline()`
+    - `benchmark()` tests all four backends including inline
 
-Files added:
-  src/main/utils/is-prod.ts
-  src/renderer/globe/hal/is-prod.ts
-  src/renderer/globe/plugins/benchmark-plugin.ts
+Benchmark plugin:
+  - Uses `compute-bench.makeBenchPayload()`
+  - Added "Download JSON" button that exports `BenchReport[]`
+  - Maps `cpu-inline`/`cpu-worker` to `inline`/`worker` in reports
 
-Files modified:
+Modified:
   electron.vite.config.ts
-  package.json
-  src/main/index.ts
-  src/main/ipc-handlers.ts (minor import alignment via prettier)
   src/renderer/globe/Globe.tsx
   src/renderer/globe/hal/compute-dispatcher.ts
-  src/renderer/globe/plugins/index.ts
+  src/renderer/globe/plugins/benchmark-plugin.ts
+  src/renderer/globe/hal/compute-bench.ts (new)
   README.md
   HAL.md
-
-Plugin count: 40 → 41.
 
 Generated with [Devin](https://devin.ai)
 

@@ -20,6 +20,7 @@
 import { gpuCompute, type ComputeKernel } from './gpu-compute'
 import { webCodecs } from './webcodecs'
 import { halLog } from './is-prod'
+import { computeInline, type BenchSample } from './compute-bench'
 import {
   initWasmSimd,
   isWasmReady,
@@ -103,125 +104,24 @@ class ComputeDispatcher {
     const cellCount = payload.width * payload.height
     const start = performance.now()
 
-    // Try WebGPU first if available and grid is large enough
-    if (this.capabilities.webgpu && cellCount >= GPU_MIN_CELLS) {
+    // Try preferred backend first, then fall back in priority order.
+    const priority = this.selectBackendPriority(task, payload)
+
+    for (const backend of priority) {
       try {
-        const kernel = KERNEL_MAP[task] as ComputeKernel
-        const inputs = payload.input2
-          ? (payload.input3 ? [payload.input, payload.input2, payload.input3] : [payload.input, payload.input2])
-          : [payload.input]
-
-        const result = await gpuCompute.execute(kernel, {
-          width: payload.width,
-          height: payload.height,
-          input: inputs,
-          uniforms: payload.params,
-          ramp: payload.ramp,
-        })
-
-        const computeResult: ComputeResult = {
-          output: result.output,
-          backend: 'webgpu',
-          durationMs: result.durationMs,
-          task,
-          width: payload.width,
-          height: payload.height,
-        }
-        this.recordStats(task, 'webgpu', result.durationMs, cellCount)
-        halLog.log(`[hal/dispatcher] ${task} → WebGPU — ${cellCount} cells in ${result.durationMs.toFixed(1)}ms`)
-        return computeResult
+        const result = await this.dispatchBackend(task, payload, backend)
+        this.recordStats(task, result.backend, result.durationMs, cellCount)
+        halLog.log(`[hal/dispatcher] ${task} → ${result.backend} — ${cellCount} cells in ${result.durationMs.toFixed(1)}ms`)
+        return result
       } catch (e) {
-        halLog.warn(`[hal/dispatcher] WebGPU ${task} failed, falling back to CPU:`, e)
+        halLog.warn(`[hal/dispatcher] ${task} backend ${backend} failed, trying next`, e)
       }
     }
 
-    // Try WASM SIMD backend (faster than CPU worker for SIMD-eligible tasks)
-    if (this.capabilities.wasmSimd && isWasmReady()) {
-      try {
-        let output: Float32Array | null = null
-
-        if (task === 'ndvi' || task === 'ndwi' || task === 'nbr') {
-          if (payload.input && payload.input2) {
-            output = wasmBandMath(payload.input, payload.input2)
-          }
-        } else if (task === 'slope') {
-          if (payload.input) {
-            const cellSize = payload.cellSizeX || 30
-            output = wasmSlope(payload.input, payload.width, payload.height, cellSize)
-          }
-        } else if (task === 'hillshade') {
-          if (payload.input && payload.params) {
-            const cellSize = payload.cellSizeX || 30
-            const azimuth = payload.params[0] || 315
-            const elevation = payload.params[1] || 45
-            output = wasmHillshade(payload.input, payload.width, payload.height, cellSize, azimuth, elevation)
-          }
-        } else if (task === 'anomaly') {
-          if (payload.input) {
-            output = wasmBoxBlur(payload.input, payload.width, payload.height)
-          }
-        }
-
-        if (output) {
-          const durationMs = performance.now() - start
-          const computeResult: ComputeResult = {
-            output,
-            backend: 'wasm-simd',
-            durationMs,
-            task,
-            width: payload.width,
-            height: payload.height,
-          }
-          this.recordStats(task, 'wasm-simd', durationMs, cellCount)
-          halLog.log(`[hal/dispatcher] ${task} → WASM SIMD — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
-          return computeResult
-        }
-      } catch (e) {
-        halLog.warn(`[hal/dispatcher] WASM SIMD ${task} failed, falling back to CPU worker:`, e)
-      }
-    }
-
-    // Fall back to CPU worker pool via IPC
-    if (this.capabilities.cpuWorker) {
-      try {
-        const response = await window.api.invoke('compute:task', {
-          task,
-          payload: {
-            width: payload.width,
-            height: payload.height,
-            input: Array.from(payload.input),
-            input2: payload.input2 ? Array.from(payload.input2) : undefined,
-            input3: payload.input3 ? Array.from(payload.input3) : undefined,
-            params: payload.params ? Array.from(payload.params) : undefined,
-            cellSizeX: payload.cellSizeX,
-            cellSizeY: payload.cellSizeY,
-          },
-        }) as { output: number[]; backend: ComputeBackend; durationMs: number; width: number; height: number } | null
-
-        if (response && response.output) {
-          const output = new Float32Array(response.output)
-          const durationMs = performance.now() - start
-          const computeResult: ComputeResult = {
-            output,
-            backend: response.backend || 'cpu-worker',
-            durationMs,
-            task,
-            width: response.width,
-            height: response.height,
-          }
-          this.recordStats(task, 'cpu-worker', durationMs, cellCount)
-          halLog.log(`[hal/dispatcher] ${task} → CPU worker — ${cellCount} cells in ${durationMs.toFixed(1)}ms`)
-          return computeResult
-        }
-      } catch (e) {
-        halLog.warn(`[hal/dispatcher] CPU worker ${task} failed:`, e)
-      }
-    }
-
-    // Last resort: return empty (caller must handle inline)
+    // Nothing succeeded — record as noop
     const durationMs = performance.now() - start
-    this.recordStats(task, 'cpu-inline', durationMs, cellCount)
-    halLog.warn(`[hal/dispatcher] ${task} → no backend available, returning empty`)
+    this.recordStats(task, 'noop', durationMs, cellCount)
+    halLog.warn(`[hal/dispatcher] ${task} → all backends failed`)
     return {
       output: new Float32Array(cellCount),
       backend: 'noop',
@@ -230,6 +130,32 @@ class ComputeDispatcher {
       width: payload.width,
       height: payload.height,
     }
+  }
+
+  /**
+   * Threshold-based backend selection.
+   *
+   *   < 128×128   → inline JS (no IPC overhead)
+   *   < 512×512   → WASM SIMD → worker → inline
+   *   >= 512×512  → WebGPU → WASM SIMD → worker → inline
+   */
+  private selectBackendPriority(task: ComputeTask, payload: ComputePayload): ComputeBackend[] {
+    const cellCount = payload.width * payload.height
+    const small: ComputeBackend[] = ['cpu-inline']
+    const medium: ComputeBackend[] = []
+    if (this.canRunBackend('wasm-simd', task, payload)) medium.push('wasm-simd')
+    if (this.canRunBackend('cpu-worker', task, payload)) medium.push('cpu-worker')
+    medium.push('cpu-inline')
+
+    const large: ComputeBackend[] = []
+    if (this.canRunBackend('webgpu', task, payload)) large.push('webgpu')
+    if (this.canRunBackend('wasm-simd', task, payload)) large.push('wasm-simd')
+    if (this.canRunBackend('cpu-worker', task, payload)) large.push('cpu-worker')
+    large.push('cpu-inline')
+
+    if (cellCount < 128 * 128) return small
+    if (cellCount < 512 * 512) return medium
+    return large
   }
 
   /** Check if WebGPU is available for a given grid size. */
@@ -366,6 +292,9 @@ class ComputeDispatcher {
     }
 
     // cpu-inline / noop
+    if (backend === 'cpu-inline') {
+      return computeInline(task, payload)
+    }
     return {
       output: new Float32Array(cellCount),
       backend: 'noop',

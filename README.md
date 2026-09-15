@@ -63,8 +63,8 @@ DEM analysis, and local compute — all in one unified cockpit window.
 - **AI:** Ollama (Qwen-VL) + CLIP (local FastAPI, CUDA-backed)
 - **Lightning:** Blitzortung WebSocket (character-based LZW decode, UTF-8)
 - **Build output:** `dist/` or custom `ELECTRON_OUTPUT_DIR`
-- **Production hardening:** sourcemaps disabled, Terser minification, `drop_console: ['log','info','warn','debug']`, `NODE_ENV` gating
-- **HAL benchmarks:** built-in benchmark plugin measuring WebGPU / WASM SIMD / CPU worker throughput per workload
+- **Production hardening:** sourcemaps disabled, Terser minification (`mangle`/`compress`, `drop_console`), `NODE_ENV` gating, debug/FPS disabled in prod
+- **HAL benchmarks:** `compute-bench.ts` harness measuring inline JS / WASM SIMD / worker / WebGPU throughput, threshold-based backend selection
 
 ## HAL — Hardware Abstraction Layer
 
